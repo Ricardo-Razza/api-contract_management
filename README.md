@@ -5,11 +5,9 @@
 ![MySQL](https://img.shields.io/badge/MySQL-8.0%2B-blue?style=flat-square&logo=mysql)
 ![License](https://img.shields.io/badge/License-Proprietary-red?style=flat-square)
 
-<<<<<<< HEAD
-`Sistema de gerenciamento de contratos e atas de registro de preço com notificações automáticas de vencimento.
-=======
+
 Sistema de gerenciamento de contratos e atas de registro de preço com notificações automáticas de vencimento.
->>>>>>> 902fbb7b1f7d5c981407e0b86dc4d668803b70c9
+
 
 ## 📋 Descrição
 
