@@ -34,7 +34,7 @@ public interface ContratoRepository extends JpaRepository<Contrato, Long> {
     @Query("""
         SELECT c FROM Contrato c
         WHERE c.dataFim = :data
-          AND c.ativo.situacao = 'SIM'
+          AND c.ativo.situacao = 'ATIVO'
         """)
     List<Contrato> findByDataFim(@Param("data") LocalDate data);
 
