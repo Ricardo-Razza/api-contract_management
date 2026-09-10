@@ -9,6 +9,8 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: true
+    hibernate:
+      ddl-auto: update
     properties:
       hibernate:
         format_sql: true
@@ -45,6 +47,21 @@ springdoc:
     operations-sorter: method
     tags-sorter: alpha
     display-request-duration: true
+
+jwt:
+  secret: ${JWT_SECRET}
+  expiration-ms: ${JWT_EXPIRATION_MS}
+
+auth:
+  seed-default-users: ${AUTH_SEED_DEFAULT_USERS}
+  admin:
+    name: ${AUTH_ADMIN_NAME}
+    email: ${AUTH_ADMIN_EMAIL}
+    password: ${AUTH_ADMIN_PASSWORD}
+  gestor:
+    name: ${AUTH_GESTOR_NAME}
+    email: ${AUTH_GESTOR_EMAIL}
+    password: ${AUTH_GESTOR_PASSWORD}
 
 logging:
   level:

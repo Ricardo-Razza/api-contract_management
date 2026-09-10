@@ -17,11 +17,7 @@ API REST para administração centralizada de contratos, atas de registro de pre
 
 - **Linguagem**: Java 21 (LTS)
 - **Framework**: Spring Boot 4.1.0
-<<<<<<< HEAD
-`- **ORM**: Hibernate / Spring Data JPA
-=======
 - **ORM**: Hibernate / Spring Data JPA
->>>>>>> 902fbb7b1f7d5c981407e0b86dc4d668803b70c9
 - **Banco de Dados**: MySQL 8.0+
 - **Build**: Maven 3.9+
 - **Documentação**: SpringDoc OpenAPI / Swagger
@@ -86,6 +82,36 @@ src/main/java/com/contract_management/api/
 ```
 http://localhost:8081/api
 ```
+
+### Autenticação
+
+A API usa JWT no esquema Bearer. Os usuários iniciais são criados automaticamente
+quando `AUTH_SEED_DEFAULT_USERS=true` (configuração padrão), usando as credenciais
+definidas no `.env`:
+
+| Papel | E-mail padrão | Senha padrão |
+|-------|---------------|--------------|
+| ADMIN | `admin@example.com` | `Admin@123456` |
+| GESTOR | `gestor@example.com` | `Gestor@123456` |
+
+Faça login para obter o token:
+
+```bash
+curl -X POST http://localhost:8081/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","senha":"Admin@123456"}'
+```
+
+Use o valor de `token` retornado em todas as rotas protegidas:
+
+```bash
+curl http://localhost:8081/api/contratos \
+  -H "Authorization: Bearer SEU_TOKEN"
+```
+
+`ADMIN` possui acesso a todos os recursos. `GESTOR` pode ler e alterar
+`/contratos` e `/atas`, mas não pode administrar os demais recursos.
+O login e o Swagger permanecem públicos.
 
 | Recurso | Método | Endpoint | Descrição |
 |---------|--------|----------|-----------|
