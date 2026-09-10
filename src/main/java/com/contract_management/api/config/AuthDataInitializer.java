@@ -32,11 +32,16 @@ public class AuthDataInitializer {
                 return;
             }
             createIfAbsent(adminName, adminEmail, adminPassword, Papel.ADMIN);
-            createIfAbsent(gestorName, gestorEmail, gestorPassword, Papel.GESTOR);
+            if (isConfigured(gestorName, gestorEmail, gestorPassword)) {
+                createIfAbsent(gestorName, gestorEmail, gestorPassword, Papel.GESTOR);
+            }
         };
     }
 
     private void createIfAbsent(String nome, String email, String senha, Papel papel) {
+        if (!isConfigured(nome, email, senha)) {
+            throw new IllegalArgumentException("Dados do usuário administrador não foram configurados");
+        }
         if (!usuarioRepository.existsByEmailIgnoreCase(email)) {
             Usuario usuario = new Usuario();
             usuario.setNome(nome);
@@ -45,5 +50,11 @@ public class AuthDataInitializer {
             usuario.setPapel(papel);
             usuarioRepository.save(usuario);
         }
+    }
+
+    private boolean isConfigured(String nome, String email, String senha) {
+        return nome != null && !nome.isBlank()
+                && email != null && !email.isBlank()
+                && senha != null && !senha.isBlank();
     }
 }

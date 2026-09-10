@@ -113,6 +113,37 @@ curl http://localhost:8081/api/contratos \
 `/contratos` e `/atas`, mas não pode administrar os demais recursos.
 O login e o Swagger permanecem públicos.
 
+Usuários e papéis podem ser administrados por um `ADMIN`:
+
+```http
+POST /api/usuarios
+Authorization: Bearer SEU_TOKEN_ADMIN
+Content-Type: application/json
+```
+
+```json
+{
+  "nome": "Nome da pessoa",
+  "email": "pessoa@empresa.com",
+  "senha": "SenhaForte@123",
+  "papel": "GESTOR"
+}
+```
+
+Para alterar o papel de um usuário existente:
+
+```http
+PATCH /api/usuarios/{id}/papel
+Authorization: Bearer SEU_TOKEN_ADMIN
+Content-Type: application/json
+```
+
+```json
+{
+  "papel": "ADMIN"
+}
+```
+
 | Recurso | Método | Endpoint | Descrição |
 |---------|--------|----------|-----------|
 | **Contratos** | GET | `/contratos` | Listar todos |

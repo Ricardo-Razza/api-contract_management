@@ -57,9 +57,9 @@ auth:
     email: ${AUTH_ADMIN_EMAIL}
     password: ${AUTH_ADMIN_PASSWORD}
   gestor:
-    name: ${AUTH_GESTOR_NAME}
-    email: ${AUTH_GESTOR_EMAIL}
-    password: ${AUTH_GESTOR_PASSWORD}
+    name: ${AUTH_GESTOR_NAME:}
+    email: ${AUTH_GESTOR_EMAIL:}
+    password: ${AUTH_GESTOR_PASSWORD:}
 
 logging:
   level:
