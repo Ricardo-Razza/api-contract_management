@@ -40,7 +40,7 @@ public class AtaController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<AtaResponseDTO> atualizar(@PathVariable Long id, @RequestBody AtaRequestDTO dto) {
+    public ResponseEntity<AtaResponseDTO> atualizar(@PathVariable Long id, @Valid @RequestBody AtaRequestDTO dto) {
         return ResponseEntity.ok(ataService.atualizar(id, dto));
     }
 }
