@@ -15,6 +15,8 @@ import com.contract_management.api.repository.SecretariaRepository;
 import com.contract_management.api.repository.TipoRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,6 +45,17 @@ public class ContratoService {
         return contratos.stream()
                 .map(this::toResponseDTO)
                 .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ContratoResponseDTO> listarPaginado(Pageable pageable) {
+        Page<Contrato> pagina = contratoRepository.findAll(pageable);
+        if (pagina.hasContent()) {
+            List<Contrato> contratos = pagina.getContent();
+            contratoRepository.carregarSecretarias(contratos);
+            contratoRepository.carregarEquipes(contratos);
+        }
+        return pagina.map(this::toResponseDTO);
     }
 
     @Transactional(readOnly = true)

@@ -53,6 +53,18 @@ public interface ContratoRepository extends JpaRepository<Contrato, Long> {
     List<Contrato> findAllComSecretarias();
 
     /**
+     * Carrega tipo, ativo e secretarias vinculadas para a lista de contratos fornecida (utilizado na paginação).
+     */
+    @Query("SELECT DISTINCT c FROM Contrato c " +
+           "LEFT JOIN FETCH c.tipo " +
+           "LEFT JOIN FETCH c.ativo " +
+           "LEFT JOIN FETCH c.secretarias s " +
+           "LEFT JOIN FETCH s.secretaria " +
+           "LEFT JOIN FETCH s.ativo " +
+           "WHERE c IN :contratos")
+    List<Contrato> carregarSecretarias(@Param("contratos") List<Contrato> contratos);
+
+    /**
      * Carrega as equipes com membros, servidores e funções para a lista de contratos fornecida,
      * inicializando os relacionamentos no Persistence Context em uma única query sem MultipleBagFetchException.
      */

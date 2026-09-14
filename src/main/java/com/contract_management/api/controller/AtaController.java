@@ -5,6 +5,10 @@ import com.contract_management.api.dto.response.AtaResponseDTO;
 import com.contract_management.api.service.AtaService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -21,6 +25,12 @@ public class AtaController {
     @GetMapping
     public ResponseEntity<List<AtaResponseDTO>> listarTodos() {
         return ResponseEntity.ok(ataService.listarTodos());
+    }
+
+    @GetMapping("/paginado")
+    public ResponseEntity<Page<AtaResponseDTO>> listarPaginado(
+            @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC) Pageable pageable) {
+        return ResponseEntity.ok(ataService.listarPaginado(pageable));
     }
 
     @GetMapping("/{id}")

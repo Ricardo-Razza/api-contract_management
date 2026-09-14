@@ -12,6 +12,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -96,6 +100,26 @@ class ContratoServiceTest {
         verify(contratoRepository, times(1)).findAllComSecretarias();
         verify(contratoRepository, times(1)).carregarEquipes(anyList());
         verify(contratoSecretariaRepository, never()).findByContratoId(anyLong());
+    }
+
+    @Test
+    void deveListarPaginadoCarregandoRelacionamentosEmLote() {
+        Pageable pageable = PageRequest.of(0, 10);
+        Page<Contrato> pageMock = new PageImpl<>(List.of(contrato), pageable, 1);
+        when(contratoRepository.findAll(pageable)).thenReturn(pageMock);
+        when(contratoRepository.carregarSecretarias(anyList())).thenReturn(List.of(contrato));
+        when(contratoRepository.carregarEquipes(anyList())).thenReturn(List.of(contrato));
+
+        Page<ContratoResponseDTO> resultado = contratoService.listarPaginado(pageable);
+
+        assertNotNull(resultado);
+        assertEquals(1, resultado.getTotalElements());
+        assertEquals(1, resultado.getContent().size());
+        assertEquals(123, resultado.getContent().get(0).getNumero());
+
+        verify(contratoRepository, times(1)).findAll(pageable);
+        verify(contratoRepository, times(1)).carregarSecretarias(anyList());
+        verify(contratoRepository, times(1)).carregarEquipes(anyList());
     }
 
     @Test

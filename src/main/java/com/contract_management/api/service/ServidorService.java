@@ -10,6 +10,8 @@ import com.contract_management.api.repository.AtivoRepository;
 import com.contract_management.api.repository.ServidorRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +32,12 @@ public class ServidorService {
         return servidorRepository.findAll().stream()
                 .map(this::toResponseDTO)
                 .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ServidorResponseDTO> listarPaginado(Pageable pageable) {
+        log.info("Buscando servidores paginados: {}", pageable);
+        return servidorRepository.findAll(pageable).map(this::toResponseDTO);
     }
 
     @Transactional(readOnly = true)
