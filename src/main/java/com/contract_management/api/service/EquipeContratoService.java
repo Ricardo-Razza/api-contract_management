@@ -5,9 +5,11 @@ import com.contract_management.api.dto.request.MembroEquipeRequestDTO;
 import com.contract_management.api.dto.response.EquipeContratoResponseDTO;
 import com.contract_management.api.dto.response.MembroEquipeResponseDTO;
 import com.contract_management.api.exception.BusinessException;
+import com.contract_management.api.exception.EntityNotFoundException;
 import com.contract_management.api.model.*;
 import com.contract_management.api.repository.*;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,25 +18,16 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
+@Slf4j
 public class EquipeContratoService {
 
-    @Autowired
-    private EquipeContratoRepository equipeContratoRepository;
-
-    @Autowired
-    private AtaRepository ataRepository;
-
-    @Autowired
-    private ContratoRepository contratoRepository;
-
-    @Autowired
-    private AtivoRepository ativoRepository;
-
-    @Autowired
-    private ServidorRepository servidorRepository;
-
-    @Autowired
-    private FuncaoEquipeRepository funcaoEquipeRepository;
+    private final EquipeContratoRepository equipeContratoRepository;
+    private final AtaRepository ataRepository;
+    private final ContratoRepository contratoRepository;
+    private final AtivoRepository ativoRepository;
+    private final ServidorRepository servidorRepository;
+    private final FuncaoEquipeRepository funcaoEquipeRepository;
 
     @Transactional(readOnly = true)
     public List<EquipeContratoResponseDTO> buscarTodas() {
@@ -47,14 +40,14 @@ public class EquipeContratoService {
     @Transactional(readOnly = true)
     public EquipeContratoResponseDTO buscarPorId(Long id) {
         EquipeContrato equipe = equipeContratoRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Equipe não encontrada com o ID: " + id));
+                .orElseThrow(() -> new EntityNotFoundException("Equipe", id));
         return converterParaResponseDTO(equipe);
     }
 
     @Transactional
     public EquipeContratoResponseDTO salvar(EquipeContratoRequestDTO dto) {
         Ativo ativo = ativoRepository.findById(dto.getAtivoId())
-                .orElseThrow(() -> new RuntimeException("Ativo não encontrado com o ID: " + dto.getAtivoId()));
+                .orElseThrow(() -> new EntityNotFoundException("Ativo", dto.getAtivoId()));
 
         EquipeContrato equipe = EquipeContrato.builder()
                 .ativo(ativo)
@@ -71,10 +64,10 @@ public class EquipeContratoService {
     @Transactional
     public EquipeContratoResponseDTO atualizar(Long id, EquipeContratoRequestDTO dto) {
         EquipeContrato equipeExistente = equipeContratoRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Equipe não encontrada com o ID: " + id));
+                .orElseThrow(() -> new EntityNotFoundException("Equipe", id));
 
         Ativo ativo = ativoRepository.findById(dto.getAtivoId())
-                .orElseThrow(() -> new RuntimeException("Ativo não encontrado com o ID: " + dto.getAtivoId()));
+                .orElseThrow(() -> new EntityNotFoundException("Ativo", dto.getAtivoId()));
 
         equipeExistente.setAtivo(ativo);
         vincularOrigem(equipeExistente, dto);
@@ -88,7 +81,7 @@ public class EquipeContratoService {
     @Transactional
     public void deletar(Long id) {
         if (!equipeContratoRepository.existsById(id)) {
-            throw new RuntimeException("Equipe não encontrada com o ID: " + id);
+            throw new EntityNotFoundException("Equipe", id);
         }
         equipeContratoRepository.deleteById(id);
     }
@@ -137,14 +130,14 @@ public class EquipeContratoService {
 
         if (temAta) {
             AtaRegistroPreco ata = ataRepository.findById(dto.getAtaId())
-                    .orElseThrow(() -> new RuntimeException("Ata não encontrada com o ID: " + dto.getAtaId()));
+                    .orElseThrow(() -> new EntityNotFoundException("ATA", dto.getAtaId()));
             equipe.setAta(ata);
             equipe.setContrato(null);
             return;
         }
 
         Contrato contrato = contratoRepository.findById(dto.getContratoId())
-                .orElseThrow(() -> new RuntimeException("Contrato não encontrado com o ID: " + dto.getContratoId()));
+                .orElseThrow(() -> new EntityNotFoundException("Contrato", dto.getContratoId()));
         equipe.setContrato(contrato);
         equipe.setAta(null);
     }
@@ -155,10 +148,10 @@ public class EquipeContratoService {
         }
         for (MembroEquipeRequestDTO membroDTO : dto.getMembros()) {
             Servidor servidor = servidorRepository.findById(membroDTO.getServidorId())
-                    .orElseThrow(() -> new RuntimeException("Servidor não encontrado com o ID: " + membroDTO.getServidorId()));
+                    .orElseThrow(() -> new EntityNotFoundException("Servidor", membroDTO.getServidorId()));
 
             FuncaoEquipe funcao = funcaoEquipeRepository.findById(membroDTO.getFuncaoId())
-                    .orElseThrow(() -> new RuntimeException("Função não encontrada com o ID: " + membroDTO.getFuncaoId()));
+                    .orElseThrow(() -> new EntityNotFoundException("Função", membroDTO.getFuncaoId()));
 
             EquipeMembro membro = EquipeMembro.builder()
                     .equipe(equipe)
