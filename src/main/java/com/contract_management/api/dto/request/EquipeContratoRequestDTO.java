@@ -22,6 +22,5 @@ public class EquipeContratoRequestDTO {
     private Long ativoId;
 
     @NotEmpty(message = "A equipe deve ter ao menos um membro designado")
-    @Valid
-    private List<MembroEquipeRequestDTO> membros;
+    private List<@Valid MembroEquipeRequestDTO> membros;
 }
