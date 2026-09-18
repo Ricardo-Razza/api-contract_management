@@ -21,18 +21,34 @@ public interface AtaRepository extends JpaRepository<AtaRegistroPreco, Long> {
 
     /**
      * Carrega todas as ATAs junto com as secretarias vinculadas e seus dados (JOIN FETCH completo).
-     * Inclui: AtaSecretaria → Secretaria e Ativo — elimina todo lazy loading.
+     * Inclui: tipo, ativo, AtaSecretaria → Secretaria e Ativo — elimina todo lazy loading.
      */
     @Query("SELECT DISTINCT a FROM AtaRegistroPreco a " +
+           "LEFT JOIN FETCH a.tipo " +
+           "LEFT JOIN FETCH a.ativo " +
            "LEFT JOIN FETCH a.secretarias s " +
            "LEFT JOIN FETCH s.secretaria " +
            "LEFT JOIN FETCH s.ativo")
     List<AtaRegistroPreco> findAllComSecretarias();
 
     /**
+     * Carrega tipo, ativo e secretarias vinculadas para a lista de ATAs fornecida (utilizado na paginação).
+     */
+    @Query("SELECT DISTINCT a FROM AtaRegistroPreco a " +
+           "LEFT JOIN FETCH a.tipo " +
+           "LEFT JOIN FETCH a.ativo " +
+           "LEFT JOIN FETCH a.secretarias s " +
+           "LEFT JOIN FETCH s.secretaria " +
+           "LEFT JOIN FETCH s.ativo " +
+           "WHERE a IN :atas")
+    List<AtaRegistroPreco> carregarSecretarias(@Param("atas") List<AtaRegistroPreco> atas);
+
+    /**
      * Carrega uma ATA por ID com todas as secretarias e dados relacionados (JOIN FETCH completo).
      */
     @Query("SELECT a FROM AtaRegistroPreco a " +
+           "LEFT JOIN FETCH a.tipo " +
+           "LEFT JOIN FETCH a.ativo " +
            "LEFT JOIN FETCH a.secretarias s " +
            "LEFT JOIN FETCH s.secretaria " +
            "LEFT JOIN FETCH s.ativo " +

@@ -1,5 +1,6 @@
 package com.contract_management.api.exception;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.http.HttpStatus;
@@ -67,6 +68,8 @@ public class GlobalExceptionHandler {
     }
 
     // Classe interna para padronizar a resposta de erro
+    @Getter
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class ErrorResponse {
         private int status;
         private String message;

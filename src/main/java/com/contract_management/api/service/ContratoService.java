@@ -15,6 +15,8 @@ import com.contract_management.api.repository.SecretariaRepository;
 import com.contract_management.api.repository.TipoRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,21 +38,48 @@ public class ContratoService {
 
     @Transactional(readOnly = true)
     public List<ContratoResponseDTO> listarTodos() {
-        return contratoRepository.findAll().stream()
+        List<Contrato> contratos = contratoRepository.findAllComSecretarias();
+        if (!contratos.isEmpty()) {
+            contratoRepository.carregarEquipes(contratos);
+            boolean temEquipes = contratos.stream().anyMatch(c -> c.getEquipe() != null && !c.getEquipe().isEmpty());
+            if (temEquipes) {
+                contratoRepository.carregarMembrosEquipes(contratos);
+            }
+        }
+        return contratos.stream()
                 .map(this::toResponseDTO)
                 .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
+    public Page<ContratoResponseDTO> listarPaginado(Pageable pageable) {
+        Page<Contrato> pagina = contratoRepository.findAll(pageable);
+        if (pagina.hasContent()) {
+            List<Contrato> contratos = pagina.getContent();
+            contratoRepository.carregarSecretarias(contratos);
+            contratoRepository.carregarEquipes(contratos);
+            boolean temEquipes = contratos.stream().anyMatch(c -> c.getEquipe() != null && !c.getEquipe().isEmpty());
+            if (temEquipes) {
+                contratoRepository.carregarMembrosEquipes(contratos);
+            }
+        }
+        return pagina.map(this::toResponseDTO);
+    }
+
+    @Transactional(readOnly = true)
     public ContratoResponseDTO buscarPorId(Long id) {
-        Contrato contrato = contratoRepository.findById(id)
+        Contrato contrato = contratoRepository.findComSecretariasById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Contrato", id));
+        contratoRepository.findComEquipeById(id);
+        if (contrato.getEquipe() != null && !contrato.getEquipe().isEmpty()) {
+            contratoRepository.carregarMembrosEquipePorContratoId(id);
+        }
         return toResponseDTO(contrato);
     }
 
     @Transactional
     public ContratoResponseDTO criar(ContratoRequestDTO dto) {
-        if (contratoRepository.findByNumeroAndAno(dto.getNumero(), dto.getAno()).isPresent()) {
+        if (contratoRepository.existsByNumeroAndAno(dto.getNumero(), dto.getAno())) {
             throw new BusinessException("Contrato " + dto.getNumero() + "/" + dto.getAno() + " já existe");
         }
 
@@ -89,7 +118,7 @@ public class ContratoService {
                 .orElseThrow(() -> new EntityNotFoundException("Contrato", id));
 
         if (!contrato.getNumero().equals(dto.getNumero()) || !contrato.getAno().equals(dto.getAno())) {
-            if (contratoRepository.findByNumeroAndAno(dto.getNumero(), dto.getAno()).isPresent()) {
+            if (contratoRepository.existsByNumeroAndAno(dto.getNumero(), dto.getAno())) {
                 throw new BusinessException("Contrato " + dto.getNumero() + "/" + dto.getAno() + " já existe");
             }
         }
@@ -141,18 +170,23 @@ public class ContratoService {
         if (secretariasIds == null || secretariasIds.isEmpty()) {
             return;
         }
-        for (Long secretariaId : secretariasIds) {
-            Secretaria secretaria = secretariaRepository.findById(secretariaId)
-                    .orElseThrow(() -> new EntityNotFoundException("Secretaria", secretariaId));
-
-            ContratoSecretaria contratoSecretaria = ContratoSecretaria.builder()
-                    .contrato(contrato)
-                    .secretaria(secretaria)
-                    .ativo(ativo)
-                    .build();
-
-            contratoSecretariaRepository.save(contratoSecretaria);
+        List<Secretaria> secretarias = secretariaRepository.findAllById(secretariasIds);
+        if (secretarias.size() != secretariasIds.size()) {
+            for (Long secretariaId : secretariasIds) {
+                if (secretarias.stream().noneMatch(s -> s.getId().equals(secretariaId))) {
+                    throw new EntityNotFoundException("Secretaria", secretariaId);
+                }
+            }
         }
+        List<ContratoSecretaria> vinculos = secretarias.stream()
+                .map(sec -> ContratoSecretaria.builder()
+                        .contrato(contrato)
+                        .secretaria(sec)
+                        .ativo(ativo)
+                        .build())
+                .collect(Collectors.toList());
+
+        contratoSecretariaRepository.saveAll(vinculos);
     }
 
     private void validarDatas(ContratoRequestDTO dto) {
@@ -175,7 +209,7 @@ public class ContratoService {
         dto.setDataDesignacao(contrato.getDataDesignacao());
         dto.setSituacao(contrato.getAtivo() != null ? contrato.getAtivo().getSituacao() : null);
         dto.setObservacao(contrato.getObservacao());
-        dto.setSecretarias(mapSecretarias(contratoSecretariaRepository.findByContratoId(contrato.getId())));
+        dto.setSecretarias(mapSecretarias(contrato.getSecretarias()));
         dto.setEquipe(extractEquipe(contrato));
         return dto;
     }

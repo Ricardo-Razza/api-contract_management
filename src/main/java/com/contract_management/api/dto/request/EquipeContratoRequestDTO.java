@@ -1,5 +1,6 @@
 package com.contract_management.api.dto.request;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
@@ -21,5 +22,5 @@ public class EquipeContratoRequestDTO {
     private Long ativoId;
 
     @NotEmpty(message = "A equipe deve ter ao menos um membro designado")
-    private List<MembroEquipeRequestDTO> membros;
+    private List<@Valid MembroEquipeRequestDTO> membros;
 }

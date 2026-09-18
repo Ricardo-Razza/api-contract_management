@@ -5,13 +5,13 @@ import com.contract_management.api.dto.response.ServidorResponseDTO;
 import com.contract_management.api.exception.BusinessException;
 import com.contract_management.api.exception.EntityNotFoundException;
 import com.contract_management.api.model.Ativo;
-import com.contract_management.api.model.Secretaria;
 import com.contract_management.api.model.Servidor;
 import com.contract_management.api.repository.AtivoRepository;
-import com.contract_management.api.repository.SecretariaRepository;
 import com.contract_management.api.repository.ServidorRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,7 +24,6 @@ import java.util.stream.Collectors;
 public class ServidorService {
 
     private final ServidorRepository servidorRepository;
-    private final SecretariaRepository secretariaRepository;
     private final AtivoRepository ativoRepository;
 
     @Transactional(readOnly = true)
@@ -33,6 +32,12 @@ public class ServidorService {
         return servidorRepository.findAll().stream()
                 .map(this::toResponseDTO)
                 .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ServidorResponseDTO> listarPaginado(Pageable pageable) {
+        log.info("Buscando servidores paginados: {}", pageable);
+        return servidorRepository.findAll(pageable).map(this::toResponseDTO);
     }
 
     @Transactional(readOnly = true)

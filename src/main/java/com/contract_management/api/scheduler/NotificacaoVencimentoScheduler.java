@@ -36,7 +36,6 @@ public class NotificacaoVencimentoScheduler {
     // ===================== CONTRATOS =====================
 
     @Scheduled(cron = "0 0 8 * * *")
-    @Transactional
     public void verificarContratosVencendo() {
         for (int dias : DIAS_ALERTA) {
             LocalDate dataAlvo = LocalDate.now().plusDays(dias);
@@ -76,19 +75,22 @@ public class NotificacaoVencimentoScheduler {
                 List<EquipeContrato> equipesDoContrato =
                         equipesPorContrato.getOrDefault(contrato.getId(), List.of());
 
-                notificarEquipeContrato(contrato, equipesDoContrato, dias);
-                registrarNotificacaoContrato(contrato, dias);
+                boolean enviado = notificarEquipeContrato(contrato, equipesDoContrato, dias);
+                if (enviado) {
+                    registrarNotificacaoContrato(contrato, dias);
+                }
             }
         }
     }
 
-    private void notificarEquipeContrato(Contrato contrato, List<EquipeContrato> equipes, int diasRestantes) {
+    private boolean notificarEquipeContrato(Contrato contrato, List<EquipeContrato> equipes, int diasRestantes) {
         if (equipes.isEmpty()) {
             log.warn("Contrato {}/{} vence em {} dias mas não tem equipe vinculada",
                     contrato.getNumero(), contrato.getAno(), diasRestantes);
-            return;
+            return false;
         }
 
+        boolean algumEnviado = false;
         for (EquipeContrato equipe : equipes) {
             for (EquipeMembro membro : equipe.getMembros()) {
                 Servidor servidor = membro.getServidor();
@@ -100,6 +102,7 @@ public class NotificacaoVencimentoScheduler {
                             contrato.getAno(),
                             diasRestantes
                     );
+                    algumEnviado = true;
                     log.info("Alerta de {} dias enviado para {} (contrato {}/{})",
                             diasRestantes, servidor.getEmail(),
                             contrato.getNumero(), contrato.getAno());
@@ -110,8 +113,10 @@ public class NotificacaoVencimentoScheduler {
                 }
             }
         }
+        return algumEnviado;
     }
 
+    @Transactional
     private void registrarNotificacaoContrato(Contrato contrato, int diasAlerta) {
         NotificacaoVencimentoEnviada registro = NotificacaoVencimentoEnviada.builder()
                 .contrato(contrato)
@@ -126,7 +131,6 @@ public class NotificacaoVencimentoScheduler {
     // ===================== ATAS DE REGISTRO DE PREÇO =====================
 
     @Scheduled(cron = "0 30 8 * * *")
-    @Transactional
     public void verificarAtasVencendo() {
         for (int dias : DIAS_ALERTA) {
             LocalDate dataAlvo = LocalDate.now().plusDays(dias);
@@ -166,19 +170,22 @@ public class NotificacaoVencimentoScheduler {
                 List<EquipeContrato> equipesDaAta =
                         equipesPorAta.getOrDefault(ata.getId(), List.of());
 
-                notificarEquipeAta(ata, equipesDaAta, dias);
-                registrarNotificacaoAta(ata, dias);
+                boolean enviado = notificarEquipeAta(ata, equipesDaAta, dias);
+                if (enviado) {
+                    registrarNotificacaoAta(ata, dias);
+                }
             }
         }
     }
 
-    private void notificarEquipeAta(AtaRegistroPreco ata, List<EquipeContrato> equipes, int diasRestantes) {
+    private boolean notificarEquipeAta(AtaRegistroPreco ata, List<EquipeContrato> equipes, int diasRestantes) {
         if (equipes.isEmpty()) {
             log.warn("Ata {}/{} vence em {} dias mas não tem equipe vinculada",
                     ata.getNumero(), ata.getAno(), diasRestantes);
-            return;
+            return false;
         }
 
+        boolean algumEnviado = false;
         for (EquipeContrato equipe : equipes) {
             for (EquipeMembro membro : equipe.getMembros()) {
                 Servidor servidor = membro.getServidor();
@@ -190,6 +197,7 @@ public class NotificacaoVencimentoScheduler {
                             ata.getAno(),
                             diasRestantes
                     );
+                    algumEnviado = true;
                     log.info("Alerta de {} dias enviado para {} (ata {}/{})",
                             diasRestantes, servidor.getEmail(),
                             ata.getNumero(), ata.getAno());
@@ -200,8 +208,10 @@ public class NotificacaoVencimentoScheduler {
                 }
             }
         }
+        return algumEnviado;
     }
 
+    @Transactional
     private void registrarNotificacaoAta(AtaRegistroPreco ata, int diasAlerta) {
         NotificacaoVencimentoEnviada registro = NotificacaoVencimentoEnviada.builder()
                 .ata(ata)
