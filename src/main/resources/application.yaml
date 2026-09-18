@@ -7,11 +7,11 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
-    show-sql: true
+      ddl-auto: none
+    show-sql: false
     properties:
       hibernate:
-        format_sql: true
+        format_sql: false
         dialect: org.hibernate.dialect.MySQLDialect
     open-in-view: false
 
@@ -33,6 +33,10 @@ server:
   address: 0.0.0.0
   servlet:
     context-path: /api
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain,application/javascript,text/css
+    min-response-size: 1024
 
 springdoc:
   api-docs:
@@ -48,4 +52,4 @@ springdoc:
 
 logging:
   level:
-    com.contract_management: DEBUG
+    com.contract_management: INFO

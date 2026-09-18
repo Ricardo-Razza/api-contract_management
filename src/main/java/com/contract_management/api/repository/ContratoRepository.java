@@ -1,6 +1,7 @@
 package com.contract_management.api.repository;
 
 import com.contract_management.api.model.Contrato;
+import com.contract_management.api.model.EquipeContrato;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Query;
@@ -65,17 +66,24 @@ public interface ContratoRepository extends JpaRepository<Contrato, Long> {
     List<Contrato> carregarSecretarias(@Param("contratos") List<Contrato> contratos);
 
     /**
-     * Carrega as equipes com membros, servidores e funções para a lista de contratos fornecida,
-     * inicializando os relacionamentos no Persistence Context em uma única query sem MultipleBagFetchException.
+     * Carrega as equipes para a lista de contratos fornecida,
+     * evitando MultipleBagFetchException ao buscar equipes e membros em passos dedicados.
      */
     @Query("SELECT DISTINCT c FROM Contrato c " +
            "LEFT JOIN FETCH c.equipe eq " +
            "LEFT JOIN FETCH eq.ativo " +
+           "WHERE c IN :contratos")
+    List<Contrato> carregarEquipes(@Param("contratos") List<Contrato> contratos);
+
+    /**
+     * Carrega os membros, servidores e funções das equipes dos contratos fornecidos.
+     */
+    @Query("SELECT DISTINCT eq FROM EquipeContrato eq " +
            "LEFT JOIN FETCH eq.membros m " +
            "LEFT JOIN FETCH m.servidor " +
            "LEFT JOIN FETCH m.funcao " +
-           "WHERE c IN :contratos")
-    List<Contrato> carregarEquipes(@Param("contratos") List<Contrato> contratos);
+           "WHERE eq.contrato IN :contratos")
+    List<EquipeContrato> carregarMembrosEquipes(@Param("contratos") List<Contrato> contratos);
 
     /**
      * Carrega um contrato por ID com tipo, ativo e secretarias vinculadas.
@@ -90,14 +98,21 @@ public interface ContratoRepository extends JpaRepository<Contrato, Long> {
     Optional<Contrato> findComSecretariasById(@Param("id") Long id);
 
     /**
-     * Carrega as equipes com membros, servidores e funções para um contrato específico por ID.
+     * Carrega as equipes para um contrato específico por ID.
      */
     @Query("SELECT DISTINCT c FROM Contrato c " +
            "LEFT JOIN FETCH c.equipe eq " +
            "LEFT JOIN FETCH eq.ativo " +
+           "WHERE c.id = :id")
+    Optional<Contrato> findComEquipeById(@Param("id") Long id);
+
+    /**
+     * Carrega os membros, servidores e funções das equipes de um contrato específico por ID.
+     */
+    @Query("SELECT DISTINCT eq FROM EquipeContrato eq " +
            "LEFT JOIN FETCH eq.membros m " +
            "LEFT JOIN FETCH m.servidor " +
            "LEFT JOIN FETCH m.funcao " +
-           "WHERE c.id = :id")
-    Optional<Contrato> findComEquipeById(@Param("id") Long id);
+           "WHERE eq.contrato.id = :id")
+    List<EquipeContrato> carregarMembrosEquipePorContratoId(@Param("id") Long id);
 }

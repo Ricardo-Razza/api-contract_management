@@ -41,6 +41,10 @@ public class ContratoService {
         List<Contrato> contratos = contratoRepository.findAllComSecretarias();
         if (!contratos.isEmpty()) {
             contratoRepository.carregarEquipes(contratos);
+            boolean temEquipes = contratos.stream().anyMatch(c -> c.getEquipe() != null && !c.getEquipe().isEmpty());
+            if (temEquipes) {
+                contratoRepository.carregarMembrosEquipes(contratos);
+            }
         }
         return contratos.stream()
                 .map(this::toResponseDTO)
@@ -54,6 +58,10 @@ public class ContratoService {
             List<Contrato> contratos = pagina.getContent();
             contratoRepository.carregarSecretarias(contratos);
             contratoRepository.carregarEquipes(contratos);
+            boolean temEquipes = contratos.stream().anyMatch(c -> c.getEquipe() != null && !c.getEquipe().isEmpty());
+            if (temEquipes) {
+                contratoRepository.carregarMembrosEquipes(contratos);
+            }
         }
         return pagina.map(this::toResponseDTO);
     }
@@ -63,6 +71,9 @@ public class ContratoService {
         Contrato contrato = contratoRepository.findComSecretariasById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Contrato", id));
         contratoRepository.findComEquipeById(id);
+        if (contrato.getEquipe() != null && !contrato.getEquipe().isEmpty()) {
+            contratoRepository.carregarMembrosEquipePorContratoId(id);
+        }
         return toResponseDTO(contrato);
     }
 
