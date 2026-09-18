@@ -29,6 +29,13 @@ public class LeituraContadorService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
+    public List<LeituraContadorResponseDTO> listarPorImpressora(Long impressoraId) {
+        return leituraRepository.findUltimasLeiturasPorImpressora(impressoraId).stream()
+                .map(this::toResponseDTO)
+                .collect(Collectors.toList());
+    }
+
     @Transactional
     public LeituraContadorResponseDTO lancarLeitura(LeituraContadorRequestDTO dto) {
         Impressora impressora = impressoraRepository.findById(dto.getImpressoraId())

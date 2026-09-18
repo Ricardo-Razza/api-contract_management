@@ -20,4 +20,5 @@ public class EmpenhoImpressaoDTO {
     private BigDecimal valorTotal;
     private BigDecimal saldo;
     private Boolean ativo;
+    private Long quantidadeImpressoras;
 }

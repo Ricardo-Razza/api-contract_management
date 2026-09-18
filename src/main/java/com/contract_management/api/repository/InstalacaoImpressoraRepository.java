@@ -27,4 +27,6 @@ public interface InstalacaoImpressoraRepository extends JpaRepository<Instalacao
     List<InstalacaoImpressora> findAllAtivasWithDetails();
 
     List<InstalacaoImpressora> findByImpressoraIdOrderByDataInstalacaoDesc(Long impressoraId);
+
+    long countByEmpenhoIdAndStatus(Long empenhoId, String status);
 }
