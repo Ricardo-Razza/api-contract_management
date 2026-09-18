@@ -17,9 +17,33 @@ public interface LeituraContadorRepository extends JpaRepository<LeituraContador
            "LEFT JOIN FETCH imp.lote " +
            "LEFT JOIN FETCH l.instalacao inst " +
            "LEFT JOIN FETCH inst.secretaria " +
+           "LEFT JOIN FETCH inst.empenho " +
            "WHERE l.mesReferencia = :mes AND l.anoReferencia = :ano " +
            "ORDER BY imp.itemPedido ASC")
     List<LeituraContador> findByMesAndAnoWithDetails(@Param("mes") Integer mes, @Param("ano") Integer ano);
+
+    @Query("SELECT l FROM LeituraContador l " +
+           "JOIN FETCH l.impressora imp " +
+           "LEFT JOIN FETCH imp.lote " +
+           "LEFT JOIN FETCH l.instalacao inst " +
+           "LEFT JOIN FETCH inst.secretaria " +
+           "LEFT JOIN FETCH inst.empenho " +
+           "WHERE l.anoReferencia = :ano " +
+           "ORDER BY l.mesReferencia ASC, imp.itemPedido ASC")
+    List<LeituraContador> findByAnoWithDetails(@Param("ano") Integer ano);
+
+    @Query("SELECT l FROM LeituraContador l " +
+           "JOIN FETCH l.impressora imp " +
+           "LEFT JOIN FETCH imp.lote " +
+           "LEFT JOIN FETCH l.instalacao inst " +
+           "LEFT JOIN FETCH inst.secretaria " +
+           "LEFT JOIN FETCH inst.empenho emp " +
+           "WHERE l.mesReferencia = :mes AND l.anoReferencia = :ano AND emp.id = :empenhoId " +
+           "ORDER BY imp.itemPedido ASC")
+    List<LeituraContador> findByMesAndAnoAndEmpenhoIdWithDetails(
+            @Param("mes") Integer mes,
+            @Param("ano") Integer ano,
+            @Param("empenhoId") Long empenhoId);
 
     Optional<LeituraContador> findByImpressoraIdAndMesReferenciaAndAnoReferencia(
             Long impressoraId, Integer mesReferencia, Integer anoReferencia);

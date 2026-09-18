@@ -118,5 +118,7 @@ CREATE TABLE IF NOT EXISTS `faturamento_mensal` (
 INSERT IGNORE INTO `lote_impressao` (`id`, `numero_lote`, `descricao`, `tipo`, `franquia_mono`, `franquia_color`, `valor_locacao_mensal`, `valor_excedente_mono`, `valor_excedente_color`, `ativo`)
 VALUES
 (1, 1, 'Multifuncional Laser Monocromática (Pequeno/Médio Porte)', 'MONO', 1000, 0, 30.00, 0.0300, 0.0000, TRUE),
-(2, 3, 'Multifuncional Laser Policromática Híbrida (Colorida)', 'COLOR', 1500, 500, 204.00, 0.0400, 0.2900, TRUE),
-(3, 4, 'Impressora Laser Monocromática Porte Pequeno/Médio', 'MONO', 1000, 0, 26.00, 0.0200, 0.0000, TRUE);
+(2, 2, 'Multifuncional Laser Monocromática (Médio/Grande Porte - SMED)', 'MONO', 5000, 0, 201.00, 0.0700, 0.0000, TRUE),
+(3, 3, 'Multifuncional Laser Policromática Híbrida (Colorida)', 'COLOR', 1500, 500, 204.00, 0.0400, 0.2900, TRUE),
+(4, 4, 'Impressora Laser Monocromática Porte Pequeno/Médio (Simples PB)', 'MONO', 1000, 0, 26.00, 0.0200, 0.0000, TRUE),
+(5, 5, 'Impressora Laser Colorida Especial (500 páginas)', 'COLOR', 0, 500, 204.00, 0.0400, 0.2900, TRUE);

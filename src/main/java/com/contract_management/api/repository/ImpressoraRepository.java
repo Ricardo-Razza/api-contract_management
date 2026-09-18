@@ -19,4 +19,8 @@ public interface ImpressoraRepository extends JpaRepository<Impressora, Long> {
     Optional<Impressora> findByIp(String ip);
 
     Optional<Impressora> findByNumeroSerie(String numeroSerie);
+
+    Optional<Impressora> findByItemPedido(Integer itemPedido);
+
+    long countByLoteIdAndAtivoTrue(Long loteId);
 }

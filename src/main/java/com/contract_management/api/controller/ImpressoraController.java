@@ -18,7 +18,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import com.contract_management.api.dto.request.EmpenhoRequestDTO;
-import com.contract_management.api.dto.response.LeituraContadorResponseDTO;
+import com.contract_management.api.dto.response.*;
 import com.contract_management.api.service.LeituraContadorService;
 
 import java.util.List;
@@ -97,6 +97,29 @@ public class ImpressoraController {
             return ResponseEntity.ok(empenhoService.listarPorSecretaria(secretariaId));
         }
         return ResponseEntity.ok(empenhoService.listarTodos());
+    }
+
+    @GetMapping("/empenhos/execucao-mensal")
+    @Operation(summary = "Obtém a matriz de execução orçamentária mensal de todos os empenhos do ano")
+    public ResponseEntity<ExecucaoMensalDTO> obterExecucaoMensal(@RequestParam(required = false, defaultValue = "2026") Integer ano) {
+        return ResponseEntity.ok(empenhoService.obterExecucaoMensal(ano));
+    }
+
+    @GetMapping("/empenhos/{id}/espelho-fatura")
+    @Operation(summary = "Gera o espelho da fatura e termo de atesto mensal por empenho")
+    public ResponseEntity<EspelhoFaturaDTO> gerarEspelhoFatura(
+            @PathVariable Long id,
+            @RequestParam(required = false, defaultValue = "8") Integer mes,
+            @RequestParam(required = false, defaultValue = "2026") Integer ano) {
+        return ResponseEntity.ok(empenhoService.gerarEspelhoFatura(id, mes, ano));
+    }
+
+    @GetMapping("/lotes/balanco-franquias")
+    @Operation(summary = "Gera o balanço mensal de franquias e custos por lote contratual")
+    public ResponseEntity<BalancoFranquiasDTO> gerarBalancoFranquias(
+            @RequestParam(required = false, defaultValue = "8") Integer mes,
+            @RequestParam(required = false, defaultValue = "2026") Integer ano) {
+        return ResponseEntity.ok(loteService.gerarBalancoFranquias(mes, ano));
     }
 
     @GetMapping("/empenhos/{id}")
