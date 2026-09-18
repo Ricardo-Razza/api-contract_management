@@ -1,0 +1,31 @@
+package com.contract_management.api.repository;
+
+import com.contract_management.api.model.LeituraContador;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+
+@Repository
+public interface LeituraContadorRepository extends JpaRepository<LeituraContador, Long> {
+
+    @Query("SELECT l FROM LeituraContador l " +
+           "JOIN FETCH l.impressora imp " +
+           "LEFT JOIN FETCH imp.lote " +
+           "LEFT JOIN FETCH l.instalacao inst " +
+           "LEFT JOIN FETCH inst.secretaria " +
+           "WHERE l.mesReferencia = :mes AND l.anoReferencia = :ano " +
+           "ORDER BY imp.itemPedido ASC")
+    List<LeituraContador> findByMesAndAnoWithDetails(@Param("mes") Integer mes, @Param("ano") Integer ano);
+
+    Optional<LeituraContador> findByImpressoraIdAndMesReferenciaAndAnoReferencia(
+            Long impressoraId, Integer mesReferencia, Integer anoReferencia);
+
+    @Query("SELECT l FROM LeituraContador l " +
+           "WHERE l.impressora.id = :impressoraId " +
+           "ORDER BY l.anoReferencia DESC, l.mesReferencia DESC")
+    List<LeituraContador> findUltimasLeiturasPorImpressora(@Param("impressoraId") Long impressoraId);
+}
