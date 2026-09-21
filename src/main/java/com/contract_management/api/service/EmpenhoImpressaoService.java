@@ -232,13 +232,19 @@ public class EmpenhoImpressaoService {
                             .reduce(BigDecimal.ZERO, BigDecimal::add);
                     copiasMono = doMes.stream().mapToInt(LeituraContador::getCopiasMono).sum();
                     copiasColor = doMes.stream().mapToInt(LeituraContador::getCopiasColor).sum();
-                    status = "REALIZADO";
+                    if (valor.compareTo(BigDecimal.ZERO) == 0) {
+                        status = "SEM_FATURAMENTO";
+                    } else if (ano == 2026 && m >= 9) {
+                        status = "PREVISTO";
+                    } else {
+                        status = "REALIZADO";
+                    }
                 } else if (ano == 2026 && "2521".equals(e.getNumeroEmpenho()) && m == 2) {
-                    // Fevereiro 2026 - Instalação inicial SMED
+                    // Fevereiro 2026 - Instalacao inicial SMED
                     valor = new BigDecimal("765.00");
                     status = "REALIZADO";
                 } else if (ano == 2026 && m >= 9) {
-                    // Meses futuros do ano vigente: projeção com custo de locação fixo
+                    // Meses futuros do ano vigente: projecao com custo de locacao fixo
                     valor = locacaoMensalFixa;
                     status = "PREVISTO";
                 } else {
@@ -504,8 +510,232 @@ public class EmpenhoImpressaoService {
             case 2 -> "41477";
             case 3 -> "41479";
             case 4 -> "41482";
+            case 5 -> "501";
             default -> "41475";
         };
+    }
+
+    private String obterCodigoItemExcedenteColor(int numLote) {
+        return switch (numLote) {
+            case 3 -> "41480";
+            case 5 -> "501";
+            default -> "41480";
+        };
+    }
+
+    @Transactional(readOnly = true)
+    public List<EspelhoFaturaDTO> gerarNotasFiscaisLote(Integer mes, Integer ano) {
+        if (mes == null) mes = 8;
+        if (ano == null) ano = 2026;
+
+        List<EmpenhoImpressao> empenhos = empenhoRepository.findByAtivoTrueOrderByNumeroEmpenhoAsc();
+        List<String> ordemEmpenhos = List.of("2625", "2516", "2517", "2518", "2519", "2520", "2522", "2521");
+        empenhos.sort(Comparator.comparingInt(e -> {
+            int idx = ordemEmpenhos.indexOf(e.getNumeroEmpenho());
+            return idx >= 0 ? idx : 999;
+        }));
+
+        List<EspelhoFaturaDTO> faturas = new ArrayList<>();
+        for (EmpenhoImpressao e : empenhos) {
+            long qtd = instalacaoRepository.countByEmpenhoIdAndStatus(e.getId(), "ATIVA");
+            if (qtd > 0) {
+                faturas.add(gerarEspelhoFatura(e.getId(), mes, ano));
+            }
+        }
+        return faturas;
+    }
+
+    @Transactional(readOnly = true)
+    public NotasFiscaisConsolidadoDTO obterNotasFiscaisConsolidado(Integer ano) {
+        if (ano == null) ano = 2026;
+
+        List<EmpenhoImpressao> empenhos = empenhoRepository.findByAtivoTrueOrderByNumeroEmpenhoAsc();
+        List<LeituraContador> leiturasAno = leituraRepository.findByAnoWithDetails(ano);
+
+        // Agrupa leituras: empenhoId -> numLote -> mesReferencia -> List<LeituraContador>
+        Map<Long, Map<Integer, Map<Integer, List<LeituraContador>>>> mapaLeituras = new LinkedHashMap<>();
+        for (LeituraContador l : leiturasAno) {
+            if (l.getInstalacao() != null && l.getInstalacao().getEmpenho() != null) {
+                Long empId = l.getInstalacao().getEmpenho().getId();
+                int numLote = (l.getImpressora() != null && l.getImpressora().getLote() != null)
+                        ? l.getImpressora().getLote().getNumeroLote() : 1;
+                mapaLeituras
+                        .computeIfAbsent(empId, k -> new TreeMap<>())
+                        .computeIfAbsent(numLote, k -> new HashMap<>())
+                        .computeIfAbsent(l.getMesReferencia(), k -> new ArrayList<>())
+                        .add(l);
+            }
+        }
+
+        // Ordenacao conforme a planilha oficial
+        List<String> ordemEmpenhos = List.of("2625", "2516", "2517", "2518", "2519", "2520", "2522", "2521");
+        empenhos.sort(Comparator.comparingInt(e -> {
+            int idx = ordemEmpenhos.indexOf(e.getNumeroEmpenho());
+            return idx >= 0 ? idx : 999;
+        }));
+
+        List<EmpenhoNotaFiscalDTO> empenhosDTO = new ArrayList<>();
+        BigDecimal[] totaisPrefeitura = new BigDecimal[12];
+        for (int i = 0; i < 12; i++) {
+            totaisPrefeitura[i] = BigDecimal.ZERO;
+        }
+
+        for (EmpenhoImpressao e : empenhos) {
+            List<InstalacaoImpressora> ativas = instalacaoRepository.findByEmpenhoIdAndStatus(e.getId(), "ATIVA");
+            if (ativas.isEmpty()) {
+                continue;
+            }
+
+            Map<Integer, Map<Integer, List<LeituraContador>>> porLote = mapaLeituras.getOrDefault(e.getId(), Collections.emptyMap());
+
+            // Identifica lotes presentes no empenho
+            Set<Integer> lotesPresentes = new TreeSet<>();
+            Map<Integer, LoteImpressao> infoLotes = new HashMap<>();
+            for (InstalacaoImpressora inst : ativas) {
+                if (inst.getImpressora() != null && inst.getImpressora().getLote() != null) {
+                    lotesPresentes.add(inst.getImpressora().getLote().getNumeroLote());
+                    infoLotes.putIfAbsent(inst.getImpressora().getLote().getNumeroLote(), inst.getImpressora().getLote());
+                }
+            }
+
+            List<ItemNotaFiscalDTO> itensEmpenho = new ArrayList<>();
+            int itemNum = 1;
+
+            // 1. Locacao de cada lote
+            for (Integer numLote : lotesPresentes) {
+                LoteImpressao lote = infoLotes.get(numLote);
+                BigDecimal valUnit = lote != null ? lote.getValorLocacaoMensal() : BigDecimal.ZERO;
+                Map<Integer, List<LeituraContador>> porMes = porLote.getOrDefault(numLote, Collections.emptyMap());
+
+                List<MesFaturaDTO> mesesItem = new ArrayList<>();
+                for (int m = 1; m <= 12; m++) {
+                    List<LeituraContador> ls = porMes.getOrDefault(m, Collections.emptyList());
+                    BigDecimal qtd = ls.stream().map(LeituraContador::getProporcao).reduce(BigDecimal.ZERO, BigDecimal::add);
+                    BigDecimal total = ls.stream().map(LeituraContador::getValorLocacao).reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                    mesesItem.add(MesFaturaDTO.builder()
+                            .mes(m)
+                            .nomeMes(MESES_SIGLAS[m - 1])
+                            .quantidade(qtd)
+                            .valorUnitario(valUnit)
+                            .valorTotal(total)
+                            .build());
+                }
+
+                itensEmpenho.add(ItemNotaFiscalDTO.builder()
+                        .itemNumero(itemNum++)
+                        .codigoItem(obterCodigoItemLocacao(numLote))
+                        .descricao(obterDescricaoItemLocacao(numLote))
+                        .unidade("MÊS")
+                        .valorUnitario(valUnit)
+                        .meses(mesesItem)
+                        .build());
+            }
+
+            // 2. Excedente mono de cada lote
+            for (Integer numLote : lotesPresentes) {
+                LoteImpressao lote = infoLotes.get(numLote);
+                BigDecimal valUnit = lote != null ? lote.getValorExcedenteMono() : BigDecimal.ZERO;
+                Map<Integer, List<LeituraContador>> porMes = porLote.getOrDefault(numLote, Collections.emptyMap());
+
+                List<MesFaturaDTO> mesesItem = new ArrayList<>();
+                for (int m = 1; m <= 12; m++) {
+                    List<LeituraContador> ls = porMes.getOrDefault(m, Collections.emptyList());
+                    int excMono = ls.stream().mapToInt(LeituraContador::getExcedenteMono).sum();
+                    BigDecimal total = ls.stream().map(LeituraContador::getValorExcedenteMono).reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                    mesesItem.add(MesFaturaDTO.builder()
+                            .mes(m)
+                            .nomeMes(MESES_SIGLAS[m - 1])
+                            .quantidade(BigDecimal.valueOf(excMono))
+                            .valorUnitario(valUnit)
+                            .valorTotal(total)
+                            .build());
+                }
+
+                itensEmpenho.add(ItemNotaFiscalDTO.builder()
+                        .itemNumero(itemNum++)
+                        .codigoItem(obterCodigoItemExcedenteMono(numLote))
+                        .descricao("Cópia adicional monocromática do LOTE 0" + numLote + ", excedente à franquia")
+                        .unidade("UNIDADE")
+                        .valorUnitario(valUnit)
+                        .meses(mesesItem)
+                        .build());
+            }
+
+            // 3. Excedente color de cada lote colorido (Lote 3 e 5)
+            for (Integer numLote : lotesPresentes) {
+                if (numLote == 3 || numLote == 5) {
+                    LoteImpressao lote = infoLotes.get(numLote);
+                    BigDecimal valUnit = lote != null ? lote.getValorExcedenteColor() : BigDecimal.ZERO;
+                    Map<Integer, List<LeituraContador>> porMes = porLote.getOrDefault(numLote, Collections.emptyMap());
+
+                    List<MesFaturaDTO> mesesItem = new ArrayList<>();
+                    for (int m = 1; m <= 12; m++) {
+                        List<LeituraContador> ls = porMes.getOrDefault(m, Collections.emptyList());
+                        int excColor = ls.stream().mapToInt(LeituraContador::getExcedenteColor).sum();
+                        BigDecimal total = ls.stream().map(LeituraContador::getValorExcedenteColor).reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                        mesesItem.add(MesFaturaDTO.builder()
+                                .mes(m)
+                                .nomeMes(MESES_SIGLAS[m - 1])
+                                .quantidade(BigDecimal.valueOf(excColor))
+                                .valorUnitario(valUnit)
+                                .valorTotal(total)
+                                .build());
+                    }
+
+                    itensEmpenho.add(ItemNotaFiscalDTO.builder()
+                            .itemNumero(itemNum++)
+                            .codigoItem(obterCodigoItemExcedenteColor(numLote))
+                            .descricao("Cópia adicional policromática do LOTE 0" + numLote + ", excedente à franquia")
+                            .unidade("UNIDADE")
+                            .valorUnitario(valUnit)
+                            .meses(mesesItem)
+                            .build());
+                }
+            }
+
+            // Totais mensais do empenho
+            List<BigDecimal> totaisMensaisEmpenho = new ArrayList<>();
+            BigDecimal totalAnualEmpenho = BigDecimal.ZERO;
+            for (int m = 0; m < 12; m++) {
+                final int mesIdx = m;
+                BigDecimal somaMes = itensEmpenho.stream()
+                        .map(it -> it.getMeses().get(mesIdx).getValorTotal())
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                totaisMensaisEmpenho.add(somaMes);
+                totalAnualEmpenho = totalAnualEmpenho.add(somaMes);
+                totaisPrefeitura[mesIdx] = totaisPrefeitura[mesIdx].add(somaMes);
+            }
+
+            String secSigla = e.getSecretaria() != null ? e.getSecretaria().getSigla() : "-";
+            String secNome = e.getSecretaria() != null ? e.getSecretaria().getNome() : "-";
+            String titulo = "Empenho " + e.getNumeroEmpenho() + " - " + secNome;
+
+            empenhosDTO.add(EmpenhoNotaFiscalDTO.builder()
+                    .empenhoId(e.getId())
+                    .numeroEmpenho(e.getNumeroEmpenho())
+                    .secretariaSigla(secSigla)
+                    .secretariaNome(secNome)
+                    .titulo(titulo)
+                    .quantidadeEquipamentos(ativas.size())
+                    .itens(itensEmpenho)
+                    .totaisMensais(totaisMensaisEmpenho)
+                    .totalAnual(totalAnualEmpenho)
+                    .build());
+        }
+
+        List<BigDecimal> totaisPrefeituraList = Arrays.asList(totaisPrefeitura);
+        BigDecimal totalPrefeituraAnual = Arrays.stream(totaisPrefeitura).reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        return NotasFiscaisConsolidadoDTO.builder()
+                .ano(ano)
+                .competencia("Exercício " + ano)
+                .empenhos(empenhosDTO)
+                .totaisPrefeituraMensais(totaisPrefeituraList)
+                .totalPrefeituraAnual(totalPrefeituraAnual)
+                .build();
     }
 
     private EmpenhoImpressaoDTO toDTO(EmpenhoImpressao e) {

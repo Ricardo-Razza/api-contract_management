@@ -114,6 +114,21 @@ public class ImpressoraController {
         return ResponseEntity.ok(empenhoService.gerarEspelhoFatura(id, mes, ano));
     }
 
+    @GetMapping("/notas-fiscais")
+    @Operation(summary = "Obtém a matriz consolidada anual de notas fiscais por empenho e lote")
+    public ResponseEntity<NotasFiscaisConsolidadoDTO> obterNotasFiscaisConsolidado(
+            @RequestParam(required = false, defaultValue = "2026") Integer ano) {
+        return ResponseEntity.ok(empenhoService.obterNotasFiscaisConsolidado(ano));
+    }
+
+    @GetMapping("/notas-fiscais/lote")
+    @Operation(summary = "Gera o conjunto de espelhos de fatura e termos de atesto de todos os empenhos do mês")
+    public ResponseEntity<List<EspelhoFaturaDTO>> gerarNotasFiscaisLote(
+            @RequestParam(required = false, defaultValue = "8") Integer mes,
+            @RequestParam(required = false, defaultValue = "2026") Integer ano) {
+        return ResponseEntity.ok(empenhoService.gerarNotasFiscaisLote(mes, ano));
+    }
+
     @GetMapping("/lotes/balanco-franquias")
     @Operation(summary = "Gera o balanço mensal de franquias e custos por lote contratual")
     public ResponseEntity<BalancoFranquiasDTO> gerarBalancoFranquias(
