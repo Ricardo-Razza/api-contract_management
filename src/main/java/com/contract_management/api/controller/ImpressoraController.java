@@ -122,11 +122,13 @@ public class ImpressoraController {
     }
 
     @GetMapping("/notas-fiscais/lote")
-    @Operation(summary = "Gera o conjunto de espelhos de fatura e termos de atesto de todos os empenhos do mês")
+    @Operation(summary = "Gera o conjunto de espelhos de fatura e termos de atesto dos empenhos para um ou mais meses")
     public ResponseEntity<List<EspelhoFaturaDTO>> gerarNotasFiscaisLote(
-            @RequestParam(required = false, defaultValue = "8") Integer mes,
-            @RequestParam(required = false, defaultValue = "2026") Integer ano) {
-        return ResponseEntity.ok(empenhoService.gerarNotasFiscaisLote(mes, ano));
+            @RequestParam(required = false) List<Integer> meses,
+            @RequestParam(required = false) Integer mes,
+            @RequestParam(required = false, defaultValue = "2026") Integer ano,
+            @RequestParam(required = false) Long empenhoId) {
+        return ResponseEntity.ok(empenhoService.gerarNotasFiscaisLote(meses, mes, ano, empenhoId));
     }
 
     @GetMapping("/lotes/balanco-franquias")

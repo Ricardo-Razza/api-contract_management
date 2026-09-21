@@ -524,25 +524,48 @@ public class EmpenhoImpressaoService {
     }
 
     @Transactional(readOnly = true)
-    public List<EspelhoFaturaDTO> gerarNotasFiscaisLote(Integer mes, Integer ano) {
-        if (mes == null) mes = 8;
+    public List<EspelhoFaturaDTO> gerarNotasFiscaisLote(List<Integer> meses, Integer mes, Integer ano, Long empenhoId) {
         if (ano == null) ano = 2026;
 
-        List<EmpenhoImpressao> empenhos = empenhoRepository.findByAtivoTrueOrderByNumeroEmpenhoAsc();
-        List<String> ordemEmpenhos = List.of("2625", "2516", "2517", "2518", "2519", "2520", "2522", "2521");
-        empenhos.sort(Comparator.comparingInt(e -> {
-            int idx = ordemEmpenhos.indexOf(e.getNumeroEmpenho());
-            return idx >= 0 ? idx : 999;
-        }));
+        List<Integer> listaMeses = new ArrayList<>();
+        if (meses != null && !meses.isEmpty()) {
+            listaMeses.addAll(meses);
+        } else if (mes != null) {
+            listaMeses.add(mes);
+        } else {
+            listaMeses.add(8);
+        }
+        listaMeses.sort(Integer::compareTo);
+
+        List<EmpenhoImpressao> empenhos;
+        if (empenhoId != null) {
+            empenhos = empenhoRepository.findById(empenhoId)
+                    .map(List::of)
+                    .orElse(Collections.emptyList());
+        } else {
+            empenhos = new ArrayList<>(empenhoRepository.findByAtivoTrueOrderByNumeroEmpenhoAsc());
+            List<String> ordemEmpenhos = List.of("2625", "2516", "2517", "2518", "2519", "2520", "2522", "2521");
+            empenhos.sort(Comparator.comparingInt(e -> {
+                int idx = ordemEmpenhos.indexOf(e.getNumeroEmpenho());
+                return idx >= 0 ? idx : 999;
+            }));
+        }
 
         List<EspelhoFaturaDTO> faturas = new ArrayList<>();
-        for (EmpenhoImpressao e : empenhos) {
-            long qtd = instalacaoRepository.countByEmpenhoIdAndStatus(e.getId(), "ATIVA");
-            if (qtd > 0) {
-                faturas.add(gerarEspelhoFatura(e.getId(), mes, ano));
+        for (Integer m : listaMeses) {
+            for (EmpenhoImpressao e : empenhos) {
+                long qtd = instalacaoRepository.countByEmpenhoIdAndStatus(e.getId(), "ATIVA");
+                if (qtd > 0) {
+                    faturas.add(gerarEspelhoFatura(e.getId(), m, ano));
+                }
             }
         }
         return faturas;
+    }
+
+    @Transactional(readOnly = true)
+    public List<EspelhoFaturaDTO> gerarNotasFiscaisLote(Integer mes, Integer ano) {
+        return gerarNotasFiscaisLote(null, mes, ano, null);
     }
 
     @Transactional(readOnly = true)
