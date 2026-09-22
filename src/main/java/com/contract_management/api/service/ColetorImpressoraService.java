@@ -23,6 +23,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -43,6 +44,11 @@ import java.util.zip.ZipOutputStream;
 @Slf4j
 public class ColetorImpressoraService {
 
+    static {
+        // Permite acessar impressoras em rede local com certificados autoassinados sem SAN/hostname
+        System.setProperty("jdk.internal.httpclient.disableHostnameVerification", "true");
+    }
+
     private final ColetaContadorSessaoRepository sessaoRepository;
     private final ColetaContadorItemRepository itemRepository;
     private final ImpressoraRepository impressoraRepository;
@@ -56,6 +62,7 @@ public class ColetorImpressoraService {
 
     @PostConstruct
     public void inicializar() {
+        System.setProperty("jdk.internal.httpclient.disableHostnameVerification", "true");
         criarTabelasSeNecessario();
         configurarHttpClient();
         criarDiretorioBase();
@@ -139,6 +146,17 @@ public class ColetorImpressoraService {
         }
     }
 
+    private boolean isIpValido(String ip) {
+        if (ip == null || ip.isBlank()) return false;
+        String trimmed = ip.trim();
+        if (trimmed.equalsIgnoreCase("USB") || trimmed.toLowerCase().contains("andrius")) return false;
+        return trimmed.matches("^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$");
+    }
+
+    private boolean isModeloPantum(String modelo) {
+        return modelo != null && modelo.toUpperCase().contains("PANTUM");
+    }
+
     public synchronized ColetaProgressoDTO iniciarColeta(IniciarColetaRequestDTO request) {
         // Verifica se ja ha uma coleta em andamento
         Optional<ColetaContadorSessao> emAndamento = sessaoRepository.findFirstByStatusOrderByDataInicioDesc("EM_ANDAMENTO");
@@ -148,12 +166,12 @@ public class ColetorImpressoraService {
 
         List<InstalacaoImpressora> instalacoes = instalacaoRepository.findAllAtivasWithDetails();
 
-        // Filtra instalacoes que tenham impressora com IP
+        // Filtra instalacoes que tenham impressora com IP valido e compativel (exclui Pantum, USB e rede Andrius que requerem leitura manual)
         List<InstalacaoImpressora> candidatas = instalacoes.stream()
                 .filter(inst -> inst.getImpressora() != null &&
-                                inst.getImpressora().getIp() != null &&
-                                !inst.getImpressora().getIp().isBlank() &&
-                                Boolean.TRUE.equals(inst.getImpressora().getAtivo()))
+                                Boolean.TRUE.equals(inst.getImpressora().getAtivo()) &&
+                                isIpValido(inst.getImpressora().getIp()) &&
+                                !isModeloPantum(inst.getImpressora().getModelo()))
                 .filter(inst -> request.getSecretariaId() == null ||
                                 (inst.getSecretaria() != null && inst.getSecretaria().getId().equals(request.getSecretariaId())))
                 .filter(inst -> request.getEmpenhoId() == null ||
@@ -162,7 +180,7 @@ public class ColetorImpressoraService {
                 .toList();
 
         if (candidatas.isEmpty()) {
-            throw new RuntimeException("Nenhuma impressora ativa com IP encontrada para os critérios informados.");
+            throw new RuntimeException("Nenhuma impressora ativa com IP de rede compatível encontrada para os critérios informados.");
         }
 
         String subPasta = String.format("%d_%02d", request.getAno(), request.getMes());
@@ -248,30 +266,28 @@ public class ColetorImpressoraService {
     private void processarItemIndividual(ColetaContadorItem item, String chromePath) {
         String ip = item.getIp();
         String modelo = item.getModelo() != null ? item.getModelo().toUpperCase() : "";
-        String url = resolverUrlPainel(ip, modelo);
-        boolean isHttps = url.startsWith("https://");
-        int porta = isHttps ? 443 : 80;
 
-        // 1. Verificacao rapida de socket TCP (Fail-fast em 2.5s)
-        if (!isPortaAberta(ip, porta, 2500)) {
-            // Tenta porta 80 caso a 443 nao responda
-            if (isHttps && isPortaAberta(ip, 80, 1500)) {
-                url = "http://" + ip;
-                porta = 80;
-            } else {
-                item.setStatus("OFFLINE");
-                item.setMensagem("Dispositivo desligado ou sem resposta na rede (timeout na porta " + porta + ")");
-                item.setDataColeta(LocalDateTime.now());
-                itemRepository.save(item);
-                atualizarProgressoParcial(item.getSessao().getId());
-                return;
-            }
+        // 1. Verificacao rapida de conectividade (Fail-fast em portas 443 e 80 com tolerância a rede local)
+        boolean porta443 = isPortaAberta(ip, 443, 3000);
+        boolean porta80 = isPortaAberta(ip, 80, 2500);
+
+        if (!porta443 && !porta80) {
+            item.setStatus("OFFLINE");
+            item.setMensagem("Dispositivo desligado ou sem resposta na rede (timeout portas 443/80)");
+            item.setDataColeta(LocalDateTime.now());
+            itemRepository.save(item);
+            atualizarProgressoParcial(item.getSessao().getId());
+            return;
         }
 
-        // 2. Extrai dados do contador via HTML
+        // Prefere HTTPS se a porta 443 estiver aberta, caso contrario usa HTTP
+        boolean usarHttps = porta443;
+        String url = resolverUrlPainel(ip, modelo, usarHttps);
+
+        // 2. Extrai dados do contador via HTML diretamente do painel
         extrairDadosContador(item, url);
 
-        // 3. Captura screenshot amplo via Chromium headless
+        // 3. Captura screenshot amplo via Chromium headless com bypass total de certificados
         File arquivoDestino = new File(item.getCaminhoArquivo());
         boolean printGerado = false;
         if (chromePath != null) {
@@ -280,13 +296,17 @@ public class ColetorImpressoraService {
 
         if (printGerado) {
             item.setStatus("SUCESSO");
-            item.setMensagem("Contadores e comprovante visual capturados com sucesso.");
+            if (item.getContadorTotal() != null && item.getContadorTotal() > 0) {
+                item.setMensagem("Contadores e comprovante visual capturados com sucesso.");
+            } else {
+                item.setMensagem("Comprovante visual capturado em alta resolução.");
+            }
         } else if (item.getContadorTotal() != null && item.getContadorTotal() > 0) {
             item.setStatus("SUCESSO");
-            item.setMensagem("Contadores lidos com sucesso (sem print visual do navegador).");
+            item.setMensagem("Contadores lidos com sucesso (sem comprovante visual do navegador).");
         } else {
             item.setStatus("ERRO");
-            item.setMensagem("Painel respondeu mas os contadores não puderam ser extraídos.");
+            item.setMensagem("Equipamento acessado, mas os contadores não puderam ser extraídos.");
         }
 
         item.setDataColeta(LocalDateTime.now());
@@ -314,55 +334,74 @@ public class ColetorImpressoraService {
         }
     }
 
-    private String resolverUrlPainel(String ip, String modelo) {
+    private String resolverUrlPainel(String ip, String modelo, boolean usarHttps) {
+        String schema = usarHttps ? "https://" : "http://";
         if (modelo.contains("M320") || modelo.contains("3710") || modelo.contains("P 311") || modelo.contains("3510") || modelo.contains("377")) {
-            return "https://" + ip + "/counter.asp?Lang=pt";
+            return schema + ip + "/counter.asp?Lang=pt";
         }
         if (modelo.contains("C2003") || modelo.contains("C2004") || modelo.contains("501") || modelo.contains("RICOH")) {
             return "http://" + ip + "/web/guest/br/websys/status/getUnificationCounter.cgi";
         }
-        if (modelo.contains("PANTUM")) {
-            return "http://" + ip + "/index.html";
-        }
         if (modelo.contains("SAMSUNG") || modelo.contains("M4070")) {
             return "http://" + ip + "/sws/app/information/counters/counters.htm";
         }
-        return "http://" + ip;
+        return schema + ip;
     }
 
     private boolean tirarScreenshot(String chromePath, String url, File arquivoDestino) {
+        Path tempProfile = null;
         try {
             if (arquivoDestino.getParentFile() != null) {
                 arquivoDestino.getParentFile().mkdirs();
             }
+
+            tempProfile = Files.createTempDirectory("coleta_browser_");
 
             List<String> command = List.of(
                     chromePath,
                     "--headless=new",
                     "--disable-gpu",
                     "--no-sandbox",
+                    "--test-type",
                     "--ignore-certificate-errors",
+                    "--ignore-certificate-errors-spki-list",
+                    "--ignore-ssl-errors",
+                    "--allow-insecure-localhost",
+                    "--disable-web-security",
+                    "--allow-running-insecure-content",
+                    "--disable-features=IsolateOrigins,site-per-process",
+                    "--user-data-dir=" + tempProfile.toAbsolutePath().toString(),
                     "--window-size=1600,1400",
                     "--hide-scrollbars",
-                    "--virtual-time-budget=4000",
+                    "--virtual-time-budget=5000",
                     "--screenshot=" + arquivoDestino.getAbsolutePath(),
                     url
             );
 
             ProcessBuilder pb = new ProcessBuilder(command);
-            pb.redirectErrorStream(true);
+            pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+            pb.redirectError(ProcessBuilder.Redirect.DISCARD);
             Process process = pb.start();
 
-            boolean finished = process.waitFor(15, TimeUnit.SECONDS);
+            boolean finished = process.waitFor(22, TimeUnit.SECONDS);
             if (!finished) {
                 process.destroyForcibly();
-                return false;
             }
 
             return arquivoDestino.exists() && arquivoDestino.length() > 1024;
         } catch (Exception e) {
             log.warn("Erro ao tirar screenshot de {}: {}", url, e.getMessage());
-            return false;
+            return arquivoDestino.exists() && arquivoDestino.length() > 1024;
+        } finally {
+            if (tempProfile != null) {
+                try {
+                    try (var stream = Files.walk(tempProfile)) {
+                        stream.sorted(Comparator.reverseOrder()).forEach(p -> {
+                            try { Files.deleteIfExists(p); } catch (Exception ignored) {}
+                        });
+                    }
+                } catch (Exception ignored) {}
+            }
         }
     }
 
@@ -375,39 +414,39 @@ public class ColetorImpressoraService {
                     .GET()
                     .build();
 
-            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<byte[]> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofByteArray());
             if (resp.statusCode() < 200 || resp.statusCode() >= 400) return;
 
-            String html = resp.body();
+            String html = new String(resp.body(), StandardCharsets.ISO_8859_1);
 
             // 1. Formato Ricoh BSA (counter.asp)
-            // Ex: Total de páginas</td>...:</td>...72342</td>
-            Pattern patTotalBsa = Pattern.compile("Total de p[aá]g(?:inas)?.*?<td[^>]*>.*?(\\d{1,8})\\s*</td>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+            Pattern patTotalBsa = Pattern.compile("Total de p[^<]+</td>\\s*<td[^>]*>.*?</td>\\s*<td[^>]*>\\s*(\\d{1,8})\\s*</td>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
             Matcher mTotalBsa = patTotalBsa.matcher(html);
             if (mTotalBsa.find()) {
                 item.setContadorTotal(Integer.parseInt(mTotalBsa.group(1).trim()));
             }
 
-            Pattern patPrint = Pattern.compile("Impressora.*?(\\d{1,8})\\s*</td>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+            Pattern patPrint = Pattern.compile("Impressora</td>\\s*<td[^>]*>(\\d+)</td>\\s*<td[^>]*>(\\d+)</td>\\s*<td[^>]*>(\\d+)</td>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
             Matcher mPrint = patPrint.matcher(html);
             if (mPrint.find()) {
                 item.setCopiasPrint(Integer.parseInt(mPrint.group(1).trim()));
+                item.setContadorMono(Integer.parseInt(mPrint.group(3).trim()));
+                item.setContadorColor(Integer.parseInt(mPrint.group(2).trim()));
             }
 
-            Pattern patScanner = Pattern.compile("Scanner.*?(\\d{1,8})\\s*</td>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+            Pattern patScanner = Pattern.compile("Scanner</td>\\s*<td[^>]*>(\\d+)</td>\\s*<td[^>]*>(\\d+)</td>\\s*<td[^>]*>(\\d+)</td>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
             Matcher mScanner = patScanner.matcher(html);
             if (mScanner.find()) {
                 item.setCopiasScanner(Integer.parseInt(mScanner.group(1).trim()));
             }
 
-            Pattern patCopiador = Pattern.compile("Copiador(?:a)?.*?(\\d{1,8})\\s*</td>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+            Pattern patCopiador = Pattern.compile("Copiador(?:a)?</td>\\s*<td[^>]*>(\\d+)</td>\\s*<td[^>]*>(\\d+)</td>\\s*<td[^>]*>(\\d+)</td>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
             Matcher mCopiador = patCopiador.matcher(html);
             if (mCopiador.find()) {
                 item.setCopiasCopiador(Integer.parseInt(mCopiador.group(1).trim()));
             }
 
             // 2. Formato Ricoh WIM (getUnificationCounter.cgi)
-            // Ex: Preto e branco</td><td nowrap>:</td><td nowrap>22553</td>
             Pattern patMonoWim = Pattern.compile("Preto e branco\\s*</td>\\s*<td[^>]*>:</td>\\s*<td[^>]*>\\s*(\\d{1,8})\\s*</td>", Pattern.CASE_INSENSITIVE);
             Matcher mMonoWim = patMonoWim.matcher(html);
             if (mMonoWim.find()) {
@@ -605,13 +644,32 @@ public class ColetorImpressoraService {
             throw new RuntimeException("Não há itens pendentes ou com falha nesta sessão.");
         }
 
+        sessaoRepository.findById(sessaoId).ifPresent(s -> {
+            s.setStatus("EM_ANDAMENTO");
+            sessaoRepository.save(s);
+        });
+
         String chromePath = buscarExecutavelNavegador();
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
         for (ColetaContadorItem item : falhas) {
             item.setStatus("PENDENTE");
             item.setMensagem("Tentando reconectar ao equipamento...");
             itemRepository.save(item);
-            CompletableFuture.runAsync(() -> processarItemIndividual(item, chromePath), executor);
+            futures.add(CompletableFuture.runAsync(() -> processarItemIndividual(item, chromePath), executor));
         }
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).thenRun(() -> {
+            sessaoRepository.findById(sessaoId).ifPresent(sessao -> {
+                List<ColetaContadorItem> atualizados = itemRepository.findBySessaoIdOrderByItemPedidoAsc(sessaoId);
+                int sucessos = (int) atualizados.stream().filter(i -> "SUCESSO".equals(i.getStatus())).count();
+                int totalFalhas = atualizados.size() - sucessos;
+                sessao.setTotalSucesso(sucessos);
+                sessao.setTotalFalhas(totalFalhas);
+                sessao.setStatus("CONCLUIDO");
+                sessao.setDataFim(LocalDateTime.now());
+                sessaoRepository.save(sessao);
+            });
+        });
     }
 
     private ColetaProgressoDTO converterProgresso(ColetaContadorSessao s) {

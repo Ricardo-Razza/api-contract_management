@@ -36,3 +36,5 @@ build/
 .env
 .env.local
 
+# Uploads e prints de coleta
+uploads/
