@@ -642,7 +642,7 @@ public class ColetorImpressoraService {
 
         String reportTotal = d != null ? formatarMilhar(d.reportTotal()) : "0";
 
-        return """
+        String template = """
             <!DOCTYPE html>
             <html lang="pt-BR">
             <head>
@@ -862,7 +862,7 @@ public class ColetorImpressoraService {
                   <span>Web Service (Embedded Web Server)</span>
                 </div>
                 <div class="device-badge">
-                  <strong>%s</strong><br>
+                  <strong>{{MODELO}}</strong><br>
                   <span>Samsung MultiXpress Series</span>
                 </div>
               </div>
@@ -886,15 +886,15 @@ public class ColetorImpressoraService {
                 <div class="info-meta">
                   <div class="meta-item">
                     <span class="meta-label">Modelo</span>
-                    <span class="meta-value">%s</span>
+                    <span class="meta-value">{{MODELO}}</span>
                   </div>
                   <div class="meta-item">
                     <span class="meta-label">Endereço IPv4</span>
-                    <span class="meta-value">%s</span>
+                    <span class="meta-value">{{IP}}</span>
                   </div>
                   <div class="meta-item">
                     <span class="meta-label">Número de Série</span>
-                    <span class="meta-value">%s</span>
+                    <span class="meta-value">{{SERIAL}}</span>
                   </div>
                   <div class="meta-item">
                     <span class="meta-label">Status do Equipamento</span>
@@ -905,19 +905,19 @@ public class ColetorImpressoraService {
                 <div class="summary-cards">
                   <div class="summary-card" style="border-left-color: #5b2382;">
                     <div class="card-label">Contador Total Geral</div>
-                    <div class="card-val" style="color: #5b2382;">%s</div>
+                    <div class="card-val" style="color: #5b2382;">{{TOTAL_GERAL}}</div>
                   </div>
                   <div class="summary-card" style="border-left-color: #2563eb;">
                     <div class="card-label">Impressões (Print)</div>
-                    <div class="card-val">%s</div>
+                    <div class="card-val">{{TOTAL_PRINT}}</div>
                   </div>
                   <div class="summary-card" style="border-left-color: #0891b2;">
                     <div class="card-label">Cópias Realizadas</div>
-                    <div class="card-val">%s</div>
+                    <div class="card-val">{{TOTAL_COPY}}</div>
                   </div>
                   <div class="summary-card" style="border-left-color: #059669;">
                     <div class="card-label">Digitalização / Scanner</div>
-                    <div class="card-val">%s</div>
+                    <div class="card-val">{{TOTAL_SCANNER}}</div>
                   </div>
                 </div>
 
@@ -934,21 +934,21 @@ public class ColetorImpressoraService {
                   <tbody>
                     <tr>
                       <td>Monocromático Simples (Simplex)</td>
-                      <td>%s</td>
-                      <td>%s</td>
-                      <td>%s</td>
+                      <td>{{SIMPLEX_PRINT}}</td>
+                      <td>{{SIMPLEX_REPORT}}</td>
+                      <td>{{SIMPLEX_TOTAL}}</td>
                     </tr>
                     <tr>
                       <td>Frente e Verso (Duplex)</td>
-                      <td>%s</td>
-                      <td>%s</td>
-                      <td>%s</td>
+                      <td>{{DUPLEX_PRINT}}</td>
+                      <td>{{DUPLEX_REPORT}}</td>
+                      <td>{{DUPLEX_TOTAL}}</td>
                     </tr>
                     <tr class="highlight-row">
                       <td>Total de Impressões (Odômetro)</td>
-                      <td>%s</td>
-                      <td>%s</td>
-                      <td>%s</td>
+                      <td>{{TOTAL_PRINT}}</td>
+                      <td>{{REPORT_TOTAL}}</td>
+                      <td>{{TOTAL_GERAL}}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -965,22 +965,22 @@ public class ColetorImpressoraService {
                   <tbody>
                     <tr>
                       <td>Impressão de Documentos (Print)</td>
-                      <td style="font-weight: 700;">%s</td>
+                      <td style="font-weight: 700;">{{TOTAL_PRINT}}</td>
                       <td style="color: #64748b;">Trabalhos enviados via rede / PC</td>
                     </tr>
                     <tr>
                       <td>Copiadora (Cópia direta no vidro/alimentador)</td>
-                      <td style="font-weight: 700;">%s</td>
+                      <td style="font-weight: 700;">{{TOTAL_COPY}}</td>
                       <td style="color: #64748b;">Trabalhos diretos de reprografia</td>
                     </tr>
                     <tr>
                       <td>Digitalização / Scanner (Envio de rede)</td>
-                      <td style="font-weight: 700;">%s</td>
+                      <td style="font-weight: 700;">{{TOTAL_SCANNER}}</td>
                       <td style="color: #64748b;">Digitalizações para pasta de rede / FTP / USB</td>
                     </tr>
                     <tr>
                       <td>Impressão em Duplex</td>
-                      <td style="font-weight: 700;">%s</td>
+                      <td style="font-weight: 700;">{{DUPLEX_TOTAL}}</td>
                       <td style="color: #64748b;">Economia de papel frente e verso</td>
                     </tr>
                   </tbody>
@@ -994,14 +994,23 @@ public class ColetorImpressoraService {
             </div>
             </body>
             </html>
-            """.formatted(
-                modelo, modelo, ip, serial,
-                totalGeral, totalPrint, totalCopy, totalScanner,
-                simplexPrint, simplexReport, simplexTotal,
-                duplexPrint, duplexReport, duplexTotal,
-                totalPrint, reportTotal, totalGeral,
-                totalPrint, totalCopy, totalScanner, duplexTotal
-        );
+            """;
+
+        return template
+                .replace("{{MODELO}}", modelo)
+                .replace("{{IP}}", ip)
+                .replace("{{SERIAL}}", serial)
+                .replace("{{TOTAL_GERAL}}", totalGeral)
+                .replace("{{TOTAL_PRINT}}", totalPrint)
+                .replace("{{TOTAL_COPY}}", totalCopy)
+                .replace("{{TOTAL_SCANNER}}", totalScanner)
+                .replace("{{SIMPLEX_PRINT}}", simplexPrint)
+                .replace("{{SIMPLEX_REPORT}}", simplexReport)
+                .replace("{{SIMPLEX_TOTAL}}", simplexTotal)
+                .replace("{{DUPLEX_PRINT}}", duplexPrint)
+                .replace("{{DUPLEX_REPORT}}", duplexReport)
+                .replace("{{DUPLEX_TOTAL}}", duplexTotal)
+                .replace("{{REPORT_TOTAL}}", reportTotal);
     }
 
     private String buscarExecutavelNavegador() {
