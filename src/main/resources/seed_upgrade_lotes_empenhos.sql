@@ -42,6 +42,3 @@ WHERE `item_pedido` IN (51, 53, 54, 56, 57, 59, 60, 62, 63, 64, 65, 68, 70, 71, 
 UPDATE `impressora` SET `lote_id` = (SELECT `id` FROM `lote_impressao` WHERE `numero_lote` = 3 LIMIT 1) 
 WHERE `item_pedido` IN (1, 10, 20, 24, 30, 31, 32, 45, 52, 55, 58, 61, 66, 67, 69, 72, 75, 76, 77, 78, 79, 80, 81, 82, 96);
 
--- 5. VINCULAR IMPRESSORA DO LOTE 05 AO LOTE_ID 5
-UPDATE `impressora` SET `lote_id` = (SELECT `id` FROM `lote_impressao` WHERE `numero_lote` = 5 LIMIT 1) 
-WHERE `item_pedido` = 501;

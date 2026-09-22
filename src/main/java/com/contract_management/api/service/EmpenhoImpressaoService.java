@@ -89,7 +89,34 @@ public class EmpenhoImpressaoService {
         sincronizarDotacaoEmpenho("2520", new BigDecimal("1320.00"));
         sincronizarDotacaoEmpenho("2522", new BigDecimal("15741.00"));
         sincronizarDotacaoEmpenho("2521", new BigDecimal("156794.00"));
+
+        // Expurgar itens >= 500 duplicados das linhas coloridas do LibreOffice
+        expurgarItensDuplicadosPlanilha();
     }
+
+    @Transactional
+    public void expurgarItensDuplicadosPlanilha() {
+        List<Impressora> todas = impressoraRepository.findAll();
+        List<Impressora> fantasmas = todas.stream()
+                .filter(i -> i.getItemPedido() != null && i.getItemPedido() >= 500)
+                .toList();
+
+        if (!fantasmas.isEmpty()) {
+            log.info("Expurgando {} impressoras fantasmas (itens >= 500) para garantir paridade com a planilha oficial", fantasmas.size());
+            for (Impressora imp : fantasmas) {
+                List<LeituraContador> leituras = leituraRepository.findUltimasLeiturasPorImpressora(imp.getId());
+                if (!leituras.isEmpty()) {
+                    leituraRepository.deleteAll(leituras);
+                }
+                List<InstalacaoImpressora> instalacoes = instalacaoRepository.findByImpressoraIdOrderByDataInstalacaoDesc(imp.getId());
+                if (!instalacoes.isEmpty()) {
+                    instalacaoRepository.deleteAll(instalacoes);
+                }
+                impressoraRepository.delete(imp);
+            }
+        }
+    }
+
 
     private void sincronizarDotacaoEmpenho(String numeroEmpenho, BigDecimal valorOficial) {
         empenhoRepository.findByNumeroEmpenhoAndAno(numeroEmpenho, 2026).ifPresent(e -> {

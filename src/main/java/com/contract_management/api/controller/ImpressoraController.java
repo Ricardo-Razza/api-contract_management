@@ -139,6 +139,17 @@ public class ImpressoraController {
         return ResponseEntity.ok(loteService.gerarBalancoFranquias(mes, ano));
     }
 
+    @PostMapping("/sincronizar-planilha")
+    @Operation(summary = "Sincroniza os dados expurgando duplicidades e garantindo paridade com a planilha oficial 2026")
+    public ResponseEntity<java.util.Map<String, String>> sincronizarPlanilha() {
+        empenhoService.expurgarItensDuplicadosPlanilha();
+        return ResponseEntity.ok(java.util.Map.of(
+                "status", "SUCESSO",
+                "mensagem", "Duplicidades expurgadas e cálculos sincronizados com a planilha oficial"
+        ));
+    }
+
+
     @GetMapping("/empenhos/{id}")
     @Operation(summary = "Busca detalhes de um empenho por ID")
     public ResponseEntity<EmpenhoImpressaoDTO> buscarEmpenhoPorId(@PathVariable Long id) {
