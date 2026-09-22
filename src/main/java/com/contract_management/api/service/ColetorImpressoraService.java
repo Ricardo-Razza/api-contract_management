@@ -343,7 +343,7 @@ public class ColetorImpressoraService {
             return "http://" + ip + "/web/guest/br/websys/status/getUnificationCounter.cgi";
         }
         if (modelo.contains("SAMSUNG") || modelo.contains("M4070")) {
-            return "http://" + ip + "/sws/app/information/counters/counters.htm";
+            return "http://" + ip + "/sws/index.html";
         }
         return schema + ip;
     }
@@ -371,9 +371,10 @@ public class ColetorImpressoraService {
                     "--allow-running-insecure-content",
                     "--disable-features=IsolateOrigins,site-per-process",
                     "--user-data-dir=" + tempProfile.toAbsolutePath().toString(),
-                    "--window-size=1600,1400",
+                    "--window-size=1050,720",
+                    "--force-device-scale-factor=1.2",
                     "--hide-scrollbars",
-                    "--virtual-time-budget=5000",
+                    "--virtual-time-budget=6000",
                     "--screenshot=" + arquivoDestino.getAbsolutePath(),
                     url
             );
@@ -406,6 +407,12 @@ public class ColetorImpressoraService {
     }
 
     private void extrairDadosContador(ColetaContadorItem item, String url) {
+        // Suporte a contadores nativos em JSON para Samsung MultiXpress M4070
+        if (item.getModelo() != null && (item.getModelo().toUpperCase().contains("SAMSUNG") || item.getModelo().toUpperCase().contains("M4070"))) {
+            extrairDadosSamsung(item);
+            return;
+        }
+
         try {
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -469,6 +476,51 @@ public class ColetorImpressoraService {
 
         } catch (Exception e) {
             log.debug("Nao foi possivel parsear contadores HTML de {}: {}", url, e.getMessage());
+        }
+    }
+
+    private void extrairDadosSamsung(ColetaContadorItem item) {
+        try {
+            String jsonUrl = "http://" + item.getIp() + "/sws/app/information/counters/counters.json";
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(jsonUrl))
+                    .timeout(Duration.ofSeconds(4))
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                    .GET()
+                    .build();
+
+            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() == 200 && resp.body() != null) {
+                String json = resp.body();
+                Pattern pTotal = Pattern.compile("GXI_BILLING_TOTAL_IMP_CNT\\s*:\\s*(\\d+)");
+                Matcher mTotal = pTotal.matcher(json);
+                if (mTotal.find()) {
+                    int total = Integer.parseInt(mTotal.group(1));
+                    item.setContadorTotal(total);
+                    item.setContadorMono(total);
+                    item.setContadorColor(0);
+                }
+
+                Pattern pPrint = Pattern.compile("GXI_BILLING_PRINT_TOTAL_IMP_CNT\\s*:\\s*(\\d+)");
+                Matcher mPrint = pPrint.matcher(json);
+                if (mPrint.find()) {
+                    item.setCopiasPrint(Integer.parseInt(mPrint.group(1)));
+                }
+
+                Pattern pCopy = Pattern.compile("GXI_BILLING_COPY_TOTAL_IMP_CNT\\s*:\\s*(\\d+)");
+                Matcher mCopy = pCopy.matcher(json);
+                if (mCopy.find()) {
+                    item.setCopiasCopiador(Integer.parseInt(mCopy.group(1)));
+                }
+
+                Pattern pSend = Pattern.compile("GXI_BILLING_SEND_TO_TOTAL_CNT\\s*:\\s*(\\d+)");
+                Matcher mSend = pSend.matcher(json);
+                if (mSend.find()) {
+                    item.setCopiasScanner(Integer.parseInt(mSend.group(1)));
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Nao foi possivel extrair JSON da Samsung {}: {}", item.getIp(), e.getMessage());
         }
     }
 
