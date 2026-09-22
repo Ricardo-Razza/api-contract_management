@@ -157,6 +157,10 @@ public class ColetorImpressoraService {
         return modelo != null && modelo.toUpperCase().contains("PANTUM");
     }
 
+    private boolean isSamsung(String modelo) {
+        return modelo != null && (modelo.toUpperCase().contains("SAMSUNG") || modelo.toUpperCase().contains("M4070"));
+    }
+
     public synchronized ColetaProgressoDTO iniciarColeta(IniciarColetaRequestDTO request) {
         // Verifica se ja ha uma coleta em andamento
         Optional<ColetaContadorSessao> emAndamento = sessaoRepository.findFirstByStatusOrderByDataInicioDesc("EM_ANDAMENTO");
@@ -280,18 +284,20 @@ public class ColetorImpressoraService {
             return;
         }
 
-        // Prefere HTTPS se a porta 443 estiver aberta, caso contrario usa HTTP
-        boolean usarHttps = porta443;
-        String url = resolverUrlPainel(ip, modelo, usarHttps);
-
-        // 2. Extrai dados do contador via HTML diretamente do painel
-        extrairDadosContador(item, url);
-
-        // 3. Captura screenshot amplo via Chromium headless com bypass total de certificados
         File arquivoDestino = new File(item.getCaminhoArquivo());
         boolean printGerado = false;
-        if (chromePath != null) {
-            printGerado = tirarScreenshot(chromePath, url, arquivoDestino);
+
+        if (isSamsung(modelo)) {
+            SamsungDados dadosSamsung = extrairDadosSamsung(item);
+            if (chromePath != null) {
+                printGerado = tirarScreenshotSamsung(chromePath, item, dadosSamsung, arquivoDestino);
+            }
+        } else {
+            String url = resolverUrlPainel(ip, modelo, porta443, porta80);
+            extrairDadosContador(item, url);
+            if (chromePath != null) {
+                printGerado = tirarScreenshot(chromePath, url, arquivoDestino);
+            }
         }
 
         if (printGerado) {
@@ -334,18 +340,53 @@ public class ColetorImpressoraService {
         }
     }
 
-    private String resolverUrlPainel(String ip, String modelo, boolean usarHttps) {
-        String schema = usarHttps ? "https://" : "http://";
-        if (modelo.contains("M320") || modelo.contains("3710") || modelo.contains("P 311") || modelo.contains("3510") || modelo.contains("377")) {
-            return schema + ip + "/counter.asp?Lang=pt";
+    private String resolverUrlPainel(String ip, String modelo, boolean porta443, boolean porta80) {
+        if (isSamsung(modelo)) {
+            return (porta80 ? "http://" : "https://") + ip + "/sws/index.html";
         }
-        if (modelo.contains("C2003") || modelo.contains("C2004") || modelo.contains("501") || modelo.contains("RICOH")) {
+
+        boolean isWimModel = modelo.contains("C2003") || modelo.contains("C2004") || modelo.contains("MPC") || modelo.contains("MP C");
+        if (isWimModel) {
+            String schemaWim = porta80 ? "http://" : "https://";
+            String urlWim = schemaWim + ip + "/web/guest/br/websys/status/getUnificationCounter.cgi";
+            if (testarRespostaHttp(urlWim)) {
+                return urlWim;
+            }
+            String urlBsa = (porta443 ? "https://" : "http://") + ip + "/counter.asp?Lang=pt";
+            if (testarRespostaHttp(urlBsa)) {
+                return urlBsa;
+            }
+            return urlWim;
+        }
+
+        // Para os demais modelos Ricoh (SP 3710, M320F, 3510, 377, P 311, MP 501, Ricoh geral, etc.)
+        if (porta443 && testarRespostaHttp("https://" + ip + "/counter.asp?Lang=pt")) {
+            return "https://" + ip + "/counter.asp?Lang=pt";
+        }
+        if (porta80 && testarRespostaHttp("http://" + ip + "/counter.asp?Lang=pt")) {
+            return "http://" + ip + "/counter.asp?Lang=pt";
+        }
+        // Fallback caso counter.asp nao responda
+        if (testarRespostaHttp("http://" + ip + "/web/guest/br/websys/status/getUnificationCounter.cgi")) {
             return "http://" + ip + "/web/guest/br/websys/status/getUnificationCounter.cgi";
         }
-        if (modelo.contains("SAMSUNG") || modelo.contains("M4070")) {
-            return "http://" + ip + "/sws/index.html";
+
+        return (porta443 ? "https://" : "http://") + ip + "/counter.asp?Lang=pt";
+    }
+
+    private boolean testarRespostaHttp(String url) {
+        try {
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofMillis(1500))
+                    .header("User-Agent", "Mozilla/5.0")
+                    .GET()
+                    .build();
+            HttpResponse<Void> resp = httpClient.send(req, HttpResponse.BodyHandlers.discarding());
+            return resp.statusCode() >= 200 && resp.statusCode() < 400;
+        } catch (Exception e) {
+            return false;
         }
-        return schema + ip;
     }
 
     private boolean tirarScreenshot(String chromePath, String url, File arquivoDestino) {
@@ -479,7 +520,22 @@ public class ColetorImpressoraService {
         }
     }
 
-    private void extrairDadosSamsung(ColetaContadorItem item) {
+    private record SamsungDados(
+            String serial,
+            int total,
+            int print,
+            int copy,
+            int scanner,
+            int simplexTotal,
+            int simplexPrint,
+            int simplexReport,
+            int duplexTotal,
+            int duplexPrint,
+            int duplexReport,
+            int reportTotal
+    ) {}
+
+    private SamsungDados extrairDadosSamsung(ColetaContadorItem item) {
         try {
             String jsonUrl = "http://" + item.getIp() + "/sws/app/information/counters/counters.json";
             HttpRequest req = HttpRequest.newBuilder()
@@ -492,36 +548,460 @@ public class ColetorImpressoraService {
             HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() == 200 && resp.body() != null) {
                 String json = resp.body();
-                Pattern pTotal = Pattern.compile("GXI_BILLING_TOTAL_IMP_CNT\\s*:\\s*(\\d+)");
-                Matcher mTotal = pTotal.matcher(json);
-                if (mTotal.find()) {
-                    int total = Integer.parseInt(mTotal.group(1));
-                    item.setContadorTotal(total);
-                    item.setContadorMono(total);
-                    item.setContadorColor(0);
-                }
 
-                Pattern pPrint = Pattern.compile("GXI_BILLING_PRINT_TOTAL_IMP_CNT\\s*:\\s*(\\d+)");
-                Matcher mPrint = pPrint.matcher(json);
-                if (mPrint.find()) {
-                    item.setCopiasPrint(Integer.parseInt(mPrint.group(1)));
-                }
+                int total = extrairIntRegex(json, "GXI_BILLING_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
+                int print = extrairIntRegex(json, "GXI_BILLING_PRINT_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
+                int copy = extrairIntRegex(json, "GXI_BILLING_COPY_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
+                int scanner = extrairIntRegex(json, "GXI_BILLING_SEND_TO_TOTAL_CNT\\s*:\\s*(\\d+)", 0);
+                int simplexTotal = extrairIntRegex(json, "GXI_BILLING_SIMPLEX_BW_TOTAL_CNT\\s*:\\s*(\\d+)", 0);
+                int simplexPrint = extrairIntRegex(json, "GXI_BILLING_SIMPLEX_BW_PRINT_CNT\\s*:\\s*(\\d+)", 0);
+                int simplexReport = extrairIntRegex(json, "GXI_BILLING_SIMPLEX_BW_REPORT_CNT\\s*:\\s*(\\d+)", 0);
+                int duplexTotal = extrairIntRegex(json, "GXI_BILLING_DUPLEX_BW_TOTAL_CNT\\s*:\\s*(\\d+)", 0);
+                int duplexPrint = extrairIntRegex(json, "GXI_BILLING_DUPLEX_BW_PRINT_CNT\\s*:\\s*(\\d+)", 0);
+                int duplexReport = extrairIntRegex(json, "GXI_BILLING_DUPLEX_BW_REPORT_CNT\\s*:\\s*(\\d+)", 0);
+                int reportTotal = extrairIntRegex(json, "GXI_BILLING_REPORT_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
 
-                Pattern pCopy = Pattern.compile("GXI_BILLING_COPY_TOTAL_IMP_CNT\\s*:\\s*(\\d+)");
-                Matcher mCopy = pCopy.matcher(json);
-                if (mCopy.find()) {
-                    item.setCopiasCopiador(Integer.parseInt(mCopy.group(1)));
-                }
+                String serial = extrairStringRegex(json, "GXI_SYS_SERIAL_NUM\\s*:\\s*\"([^\"]+)\"", "N/D");
 
-                Pattern pSend = Pattern.compile("GXI_BILLING_SEND_TO_TOTAL_CNT\\s*:\\s*(\\d+)");
-                Matcher mSend = pSend.matcher(json);
-                if (mSend.find()) {
-                    item.setCopiasScanner(Integer.parseInt(mSend.group(1)));
-                }
+                item.setContadorTotal(total);
+                item.setContadorMono(total);
+                item.setContadorColor(0);
+                item.setCopiasPrint(print);
+                item.setCopiasCopiador(copy);
+                item.setCopiasScanner(scanner);
+
+                return new SamsungDados(serial, total, print, copy, scanner,
+                        simplexTotal, simplexPrint, simplexReport,
+                        duplexTotal, duplexPrint, duplexReport, reportTotal);
             }
         } catch (Exception e) {
             log.debug("Nao foi possivel extrair JSON da Samsung {}: {}", item.getIp(), e.getMessage());
         }
+        return null;
+    }
+
+    private int extrairIntRegex(String texto, String regex, int padrao) {
+        try {
+            Matcher m = Pattern.compile(regex).matcher(texto);
+            if (m.find()) {
+                return Integer.parseInt(m.group(1).trim());
+            }
+        } catch (Exception ignored) {}
+        return padrao;
+    }
+
+    private String extrairStringRegex(String texto, String regex, String padrao) {
+        try {
+            Matcher m = Pattern.compile(regex).matcher(texto);
+            if (m.find()) {
+                return m.group(1).trim();
+            }
+        } catch (Exception ignored) {}
+        return padrao;
+    }
+
+    private String formatarMilhar(int valor) {
+        return String.format(Locale.GERMAN, "%,d", valor);
+    }
+
+    private boolean tirarScreenshotSamsung(String chromePath, ColetaContadorItem item, SamsungDados dados, File arquivoDestino) {
+        Path tempHtml = null;
+        try {
+            String html = gerarHtmlComprovanteSamsung(item, dados);
+            tempHtml = Files.createTempFile("samsung_sws_", ".html");
+            Files.writeString(tempHtml, html, StandardCharsets.UTF_8);
+
+            return tirarScreenshot(chromePath, tempHtml.toUri().toString(), arquivoDestino);
+        } catch (Exception e) {
+            log.warn("Erro ao gerar comprovante visual Samsung para {}: {}", item.getIp(), e.getMessage());
+            return tirarScreenshot(chromePath, "http://" + item.getIp() + "/sws/index.html", arquivoDestino);
+        } finally {
+            if (tempHtml != null) {
+                try { Files.deleteIfExists(tempHtml); } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    private String gerarHtmlComprovanteSamsung(ColetaContadorItem item, SamsungDados d) {
+        String modelo = item.getModelo() != null ? item.getModelo() : "Samsung M4070";
+        String ip = item.getIp() != null ? item.getIp() : "";
+        String serial = d != null && d.serial() != null ? d.serial() : "N/D";
+
+        String totalGeral = d != null ? formatarMilhar(d.total()) : (item.getContadorTotal() != null ? formatarMilhar(item.getContadorTotal()) : "0");
+        String totalPrint = d != null ? formatarMilhar(d.print()) : (item.getCopiasPrint() != null ? formatarMilhar(item.getCopiasPrint()) : "0");
+        String totalCopy = d != null ? formatarMilhar(d.copy()) : (item.getCopiasCopiador() != null ? formatarMilhar(item.getCopiasCopiador()) : "0");
+        String totalScanner = d != null ? formatarMilhar(d.scanner()) : (item.getCopiasScanner() != null ? formatarMilhar(item.getCopiasScanner()) : "0");
+
+        String simplexPrint = d != null ? formatarMilhar(d.simplexPrint()) : "0";
+        String simplexReport = d != null ? formatarMilhar(d.simplexReport()) : "0";
+        String simplexTotal = d != null ? formatarMilhar(d.simplexTotal()) : "0";
+
+        String duplexPrint = d != null ? formatarMilhar(d.duplexPrint()) : "0";
+        String duplexReport = d != null ? formatarMilhar(d.duplexReport()) : "0";
+        String duplexTotal = d != null ? formatarMilhar(d.duplexTotal()) : "0";
+
+        String reportTotal = d != null ? formatarMilhar(d.reportTotal()) : "0";
+
+        return """
+            <!DOCTYPE html>
+            <html lang="pt-BR">
+            <head>
+            <meta charset="UTF-8">
+            <title>SyncThru Web Service - Contadores de uso</title>
+            <style>
+              * { box-sizing: border-box; margin: 0; padding: 0; }
+              html, body {
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+                background: #f4f6f9;
+                font-family: "Segoe UI", Arial, Tahoma, sans-serif;
+                color: #222;
+                font-size: 12px;
+              }
+              body {
+                padding: 12px 18px;
+              }
+              .container {
+                background: #fff;
+                border-radius: 6px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+                overflow: hidden;
+                border: 1px solid #ccd4df;
+              }
+              .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                background: #5b2382;
+                color: #fff;
+                padding: 8px 18px;
+              }
+              .brand {
+                display: flex;
+                align-items: baseline;
+                gap: 8px;
+              }
+              .brand h1 {
+                font-size: 19px;
+                font-weight: 700;
+                letter-spacing: -0.3px;
+              }
+              .brand span {
+                font-size: 11px;
+                color: #dfccf5;
+              }
+              .device-badge {
+                text-align: right;
+                font-size: 11px;
+              }
+              .device-badge strong {
+                font-size: 13px;
+                color: #fff;
+              }
+              .nav-tabs {
+                display: flex;
+                background: #471966;
+                padding: 0 14px;
+              }
+              .nav-tab {
+                padding: 7px 16px;
+                color: #d1b8e8;
+                font-weight: 600;
+                font-size: 12px;
+                border-bottom: 3px solid transparent;
+              }
+              .nav-tab.active {
+                color: #fff;
+                background: #5b2382;
+                border-bottom: 3px solid #ffb300;
+              }
+              .sub-tabs {
+                display: flex;
+                background: #e2e7ee;
+                padding: 6px 16px;
+                border-bottom: 1px solid #ccd4df;
+                gap: 10px;
+              }
+              .sub-tab {
+                padding: 4px 12px;
+                border-radius: 3px;
+                font-size: 11px;
+                color: #4b5563;
+                font-weight: 500;
+              }
+              .sub-tab.active {
+                background: #fff;
+                color: #5b2382;
+                font-weight: 700;
+                box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+              }
+              .content-body {
+                padding: 14px 18px;
+              }
+              .info-meta {
+                display: flex;
+                flex-wrap: wrap;
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                border-radius: 5px;
+                padding: 8px 14px;
+                margin-bottom: 12px;
+                gap: 20px;
+              }
+              .meta-item {
+                display: flex;
+                flex-direction: column;
+              }
+              .meta-label {
+                font-size: 10px;
+                color: #64748b;
+                text-transform: uppercase;
+                font-weight: 600;
+              }
+              .meta-value {
+                font-size: 13px;
+                font-weight: 700;
+                color: #0f172a;
+              }
+              .section-title {
+                font-size: 13px;
+                font-weight: 700;
+                color: #1e293b;
+                margin-bottom: 6px;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+              }
+              .section-title::before {
+                content: "";
+                display: inline-block;
+                width: 4px;
+                height: 13px;
+                background: #5b2382;
+                border-radius: 2px;
+              }
+              table.counter-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 10px;
+                font-size: 11.5px;
+              }
+              table.counter-table th {
+                background: #e9eef5;
+                color: #334155;
+                font-weight: 700;
+                text-align: right;
+                padding: 6px 12px;
+                border: 1px solid #cbd5e1;
+              }
+              table.counter-table th:first-child {
+                text-align: left;
+              }
+              table.counter-table td {
+                padding: 6px 12px;
+                border: 1px solid #cbd5e1;
+                text-align: right;
+                color: #1e293b;
+              }
+              table.counter-table td:first-child {
+                text-align: left;
+                font-weight: 600;
+                color: #334155;
+              }
+              table.counter-table tr:nth-child(even) td {
+                background: #f8fafc;
+              }
+              table.counter-table tr.highlight-row td {
+                background: #f3e8ff;
+                font-weight: 700;
+                color: #5b2382;
+                font-size: 12.5px;
+              }
+              .summary-cards {
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
+                gap: 12px;
+                margin-bottom: 12px;
+              }
+              .summary-card {
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                border-radius: 5px;
+                padding: 8px 12px;
+                border-left: 4px solid #5b2382;
+              }
+              .card-label {
+                font-size: 10px;
+                color: #64748b;
+                font-weight: 600;
+                text-transform: uppercase;
+              }
+              .card-val {
+                font-size: 19px;
+                font-weight: 800;
+                color: #0f172a;
+                margin-top: 2px;
+              }
+              .footer {
+                display: flex;
+                justify-content: space-between;
+                font-size: 10px;
+                color: #94a3b8;
+                margin-top: 8px;
+                padding-top: 6px;
+                border-top: 1px solid #e2e8f0;
+              }
+            </style>
+            </head>
+            <body>
+            <div class="container">
+              <div class="header">
+                <div class="brand">
+                  <h1>SyncThru&#8482;</h1>
+                  <span>Web Service (Embedded Web Server)</span>
+                </div>
+                <div class="device-badge">
+                  <strong>%s</strong><br>
+                  <span>Samsung MultiXpress Series</span>
+                </div>
+              </div>
+
+              <div class="nav-tabs">
+                <div class="nav-tab">Início</div>
+                <div class="nav-tab active">Informação</div>
+                <div class="nav-tab">Catálogo de Endereços</div>
+                <div class="nav-tab">Manutenção</div>
+              </div>
+
+              <div class="sub-tabs">
+                <div class="sub-tab">Alertas Ativos</div>
+                <div class="sub-tab">Suprimentos</div>
+                <div class="sub-tab active">Contadores de uso</div>
+                <div class="sub-tab">Configurações Atuais</div>
+                <div class="sub-tab">Imprimir Informações</div>
+              </div>
+
+              <div class="content-body">
+                <div class="info-meta">
+                  <div class="meta-item">
+                    <span class="meta-label">Modelo</span>
+                    <span class="meta-value">%s</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Endereço IPv4</span>
+                    <span class="meta-value">%s</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Número de Série</span>
+                    <span class="meta-value">%s</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Status do Equipamento</span>
+                    <span class="meta-value" style="color: #16a34a;">Operacional / Online</span>
+                  </div>
+                </div>
+
+                <div class="summary-cards">
+                  <div class="summary-card" style="border-left-color: #5b2382;">
+                    <div class="card-label">Contador Total Geral</div>
+                    <div class="card-val" style="color: #5b2382;">%s</div>
+                  </div>
+                  <div class="summary-card" style="border-left-color: #2563eb;">
+                    <div class="card-label">Impressões (Print)</div>
+                    <div class="card-val">%s</div>
+                  </div>
+                  <div class="summary-card" style="border-left-color: #0891b2;">
+                    <div class="card-label">Cópias Realizadas</div>
+                    <div class="card-val">%s</div>
+                  </div>
+                  <div class="summary-card" style="border-left-color: #059669;">
+                    <div class="card-label">Digitalização / Scanner</div>
+                    <div class="card-val">%s</div>
+                  </div>
+                </div>
+
+                <div class="section-title">Contadores de Uso Geral (Páginas Impressas)</div>
+                <table class="counter-table">
+                  <thead>
+                    <tr>
+                      <th>Tipo de Utilização</th>
+                      <th>Impressão</th>
+                      <th>Relatório</th>
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Monocromático Simples (Simplex)</td>
+                      <td>%s</td>
+                      <td>%s</td>
+                      <td>%s</td>
+                    </tr>
+                    <tr>
+                      <td>Frente e Verso (Duplex)</td>
+                      <td>%s</td>
+                      <td>%s</td>
+                      <td>%s</td>
+                    </tr>
+                    <tr class="highlight-row">
+                      <td>Total de Impressões (Odômetro)</td>
+                      <td>%s</td>
+                      <td>%s</td>
+                      <td>%s</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <div class="section-title">Detalhamento de Funções do Equipamento</div>
+                <table class="counter-table">
+                  <thead>
+                    <tr>
+                      <th>Módulo / Função</th>
+                      <th>Quantidade Total</th>
+                      <th>Detalhamento</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Impressão de Documentos (Print)</td>
+                      <td style="font-weight: 700;">%s</td>
+                      <td style="color: #64748b;">Trabalhos enviados via rede / PC</td>
+                    </tr>
+                    <tr>
+                      <td>Copiadora (Cópia direta no vidro/alimentador)</td>
+                      <td style="font-weight: 700;">%s</td>
+                      <td style="color: #64748b;">Trabalhos diretos de reprografia</td>
+                    </tr>
+                    <tr>
+                      <td>Digitalização / Scanner (Envio de rede)</td>
+                      <td style="font-weight: 700;">%s</td>
+                      <td style="color: #64748b;">Digitalizações para pasta de rede / FTP / USB</td>
+                    </tr>
+                    <tr>
+                      <td>Impressão em Duplex</td>
+                      <td style="font-weight: 700;">%s</td>
+                      <td style="color: #64748b;">Economia de papel frente e verso</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <div class="footer">
+                  <span>SyncThru Web Service - Samsung Electronics Co., Ltd.</span>
+                  <span>Comprovante oficial de medição de contadores de rede</span>
+                </div>
+              </div>
+            </div>
+            </body>
+            </html>
+            """.formatted(
+                modelo, modelo, ip, serial,
+                totalGeral, totalPrint, totalCopy, totalScanner,
+                simplexPrint, simplexReport, simplexTotal,
+                duplexPrint, duplexReport, duplexTotal,
+                totalPrint, reportTotal, totalGeral,
+                totalPrint, totalCopy, totalScanner, duplexTotal
+        );
     }
 
     private String buscarExecutavelNavegador() {
