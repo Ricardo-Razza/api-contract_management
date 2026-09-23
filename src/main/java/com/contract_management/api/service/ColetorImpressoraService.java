@@ -161,6 +161,12 @@ public class ColetorImpressoraService {
         return modelo != null && (modelo.toUpperCase().contains("SAMSUNG") || modelo.toUpperCase().contains("M4070"));
     }
 
+    private boolean isHp(String modelo) {
+        if (modelo == null) return false;
+        String m = modelo.toUpperCase();
+        return m.contains("HP") || m.contains("HEWLETT") || m.contains("LASERJET") || m.contains("DESKJET") || m.contains("PAGEWIDE") || m.contains("432");
+    }
+
     public synchronized ColetaProgressoDTO iniciarColeta(IniciarColetaRequestDTO request) {
         // Verifica se ja ha uma coleta em andamento
         Optional<ColetaContadorSessao> emAndamento = sessaoRepository.findFirstByStatusOrderByDataInicioDesc("EM_ANDAMENTO");
@@ -292,6 +298,11 @@ public class ColetorImpressoraService {
             if (chromePath != null) {
                 printGerado = tirarScreenshotSamsung(chromePath, item, dadosSamsung, arquivoDestino);
             }
+        } else if (isHp(modelo)) {
+            HpDados dadosHp = extrairDadosHp(item);
+            if (chromePath != null) {
+                printGerado = tirarScreenshotHp(chromePath, item, dadosHp, arquivoDestino);
+            }
         } else {
             String url = resolverUrlPainel(ip, modelo, porta443, porta80);
             extrairDadosContador(item, url);
@@ -342,6 +353,9 @@ public class ColetorImpressoraService {
 
     private String resolverUrlPainel(String ip, String modelo, boolean porta443, boolean porta80) {
         if (isSamsung(modelo)) {
+            return (porta80 ? "http://" : "https://") + ip + "/sws/index.html";
+        }
+        if (isHp(modelo)) {
             return (porta80 ? "http://" : "https://") + ip + "/sws/index.html";
         }
 
@@ -988,6 +1002,579 @@ public class ColetorImpressoraService {
 
                 <div class="footer">
                   <span>SyncThru Web Service - Samsung Electronics Co., Ltd.</span>
+                  <span>Comprovante oficial de medição de contadores de rede</span>
+                </div>
+              </div>
+            </div>
+            </body>
+            </html>
+            """;
+
+        return template
+                .replace("{{MODELO}}", modelo)
+                .replace("{{IP}}", ip)
+                .replace("{{SERIAL}}", serial)
+                .replace("{{TOTAL_GERAL}}", totalGeral)
+                .replace("{{TOTAL_PRINT}}", totalPrint)
+                .replace("{{TOTAL_COPY}}", totalCopy)
+                .replace("{{TOTAL_SCANNER}}", totalScanner)
+                .replace("{{SIMPLEX_PRINT}}", simplexPrint)
+                .replace("{{SIMPLEX_REPORT}}", simplexReport)
+                .replace("{{SIMPLEX_TOTAL}}", simplexTotal)
+                .replace("{{DUPLEX_PRINT}}", duplexPrint)
+                .replace("{{DUPLEX_REPORT}}", duplexReport)
+                .replace("{{DUPLEX_TOTAL}}", duplexTotal)
+                .replace("{{REPORT_TOTAL}}", reportTotal);
+    }
+
+    private record HpDados(
+            String modelo,
+            String serial,
+            int total,
+            int print,
+            int copy,
+            int scanner,
+            int simplexTotal,
+            int simplexPrint,
+            int simplexReport,
+            int duplexTotal,
+            int duplexPrint,
+            int duplexReport,
+            int reportTotal
+    ) {}
+
+    private HpDados extrairDadosHp(ColetaContadorItem item) {
+        String ip = item.getIp();
+
+        // 1. Tenta arquitetura HP SWS (HP Laser MFP 432, etc.)
+        try {
+            String jsonUrl = "http://" + ip + "/sws/app/information/counters/counters.json";
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(jsonUrl))
+                    .timeout(Duration.ofSeconds(4))
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                    .GET()
+                    .build();
+
+            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() == 200 && resp.body() != null && resp.body().contains("GXI_BILLING_TOTAL_IMP_CNT")) {
+                String json = resp.body();
+
+                int total = extrairIntRegex(json, "GXI_BILLING_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
+                int print = extrairIntRegex(json, "GXI_BILLING_PRINT_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
+                int copy = extrairIntRegex(json, "GXI_BILLING_COPY_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
+                int scanner = extrairIntRegex(json, "GXI_BILLING_SEND_TO_TOTAL_CNT\\s*:\\s*(\\d+)", 0);
+                int simplexTotal = extrairIntRegex(json, "GXI_BILLING_SIMPLEX_BW_TOTAL_CNT\\s*:\\s*(\\d+)", 0);
+                int simplexPrint = extrairIntRegex(json, "GXI_BILLING_SIMPLEX_BW_PRINT_CNT\\s*:\\s*(\\d+)", 0);
+                int simplexReport = extrairIntRegex(json, "GXI_BILLING_SIMPLEX_BW_REPORT_CNT\\s*:\\s*(\\d+)", 0);
+                int duplexTotal = extrairIntRegex(json, "GXI_BILLING_DUPLEX_BW_TOTAL_CNT\\s*:\\s*(\\d+)", 0);
+                int duplexPrint = extrairIntRegex(json, "GXI_BILLING_DUPLEX_BW_PRINT_CNT\\s*:\\s*(\\d+)", 0);
+                int duplexReport = extrairIntRegex(json, "GXI_BILLING_DUPLEX_BW_REPORT_CNT\\s*:\\s*(\\d+)", 0);
+                int reportTotal = extrairIntRegex(json, "GXI_BILLING_REPORT_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
+
+                String serial = extrairStringRegex(json, "GXI_SYS_SERIAL_NUM\\s*:\\s*\"([^\"]+)\"", "N/D");
+                String modelo = item.getModelo() != null ? item.getModelo() : "HP Laser MFP 432";
+
+                // Consulta refinada do modelo no home.json se disponivel
+                try {
+                    String homeUrl = "http://" + ip + "/sws/app/information/home/home.json";
+                    HttpRequest homeReq = HttpRequest.newBuilder()
+                            .uri(URI.create(homeUrl))
+                            .timeout(Duration.ofSeconds(3))
+                            .header("User-Agent", "Mozilla/5.0")
+                            .GET()
+                            .build();
+                    HttpResponse<String> homeResp = httpClient.send(homeReq, HttpResponse.BodyHandlers.ofString());
+                    if (homeResp.statusCode() == 200 && homeResp.body() != null) {
+                        String modelFound = extrairStringRegex(homeResp.body(), "model_name\\s*:\\s*\"([^\"]+)\"", null);
+                        if (modelFound != null && !modelFound.isBlank()) {
+                            modelo = modelFound;
+                        }
+                    }
+                } catch (Exception ignored) {}
+
+                item.setContadorTotal(total);
+                item.setContadorMono(total);
+                item.setContadorColor(0);
+                item.setCopiasPrint(print);
+                item.setCopiasCopiador(copy);
+                item.setCopiasScanner(scanner);
+
+                return new HpDados(modelo, serial, total, print, copy, scanner,
+                        simplexTotal, simplexPrint, simplexReport,
+                        duplexTotal, duplexPrint, duplexReport, reportTotal);
+            }
+        } catch (Exception e) {
+            log.debug("Nao foi possivel extrair SWS JSON da HP {}: {}", ip, e.getMessage());
+        }
+
+        // 2. Tenta arquitetura padrao HP EWS XML (ProductUsageDyn.xml)
+        try {
+            String[] xmlUrls = {
+                    "http://" + ip + "/DevMgmt/ProductUsageDyn.xml",
+                    "https://" + ip + "/DevMgmt/ProductUsageDyn.xml"
+            };
+            for (String xmlUrl : xmlUrls) {
+                try {
+                    HttpRequest req = HttpRequest.newBuilder()
+                            .uri(URI.create(xmlUrl))
+                            .timeout(Duration.ofSeconds(4))
+                            .header("User-Agent", "Mozilla/5.0")
+                            .GET()
+                            .build();
+                    HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+                    if (resp.statusCode() == 200 && resp.body() != null && resp.body().contains("ProductUsageDyn")) {
+                        String xml = resp.body();
+
+                        int total = extrairIntRegex(xml, "<(?:pudyn:)?TotalImpressions>(\\d+)</", 0);
+                        if (total == 0) {
+                            total = extrairIntRegex(xml, "<(?:pudyn:)?TotalPrintEnginePageCount>(\\d+)</", 0);
+                        }
+                        int mono = extrairIntRegex(xml, "<(?:pudyn:)?MonochromeImpressions>(\\d+)</", total);
+                        int color = extrairIntRegex(xml, "<(?:pudyn:)?ColorImpressions>(\\d+)</", 0);
+                        int print = extrairIntRegex(xml, "<(?:pudyn:)?PrintPages>(\\d+)</", total);
+                        int copy = extrairIntRegex(xml, "<(?:pudyn:)?CopyImpressions>(\\d+)</", 0);
+                        int scan = extrairIntRegex(xml, "<(?:pudyn:)?ScanImages>(\\d+)</", 0);
+                        if (scan == 0) {
+                            scan = extrairIntRegex(xml, "<(?:pudyn:)?TotalImagesScanned>(\\d+)</", 0);
+                        }
+                        int simplex = extrairIntRegex(xml, "<(?:pudyn:)?SimplexSheets>(\\d+)</", 0);
+                        int duplex = extrairIntRegex(xml, "<(?:pudyn:)?DuplexSheets>(\\d+)</", 0);
+
+                        String serial = extrairStringRegex(xml, "<(?:pudyn:)?ProductSerialNumber>([^<]+)</", "N/D");
+                        String modelFound = extrairStringRegex(xml, "<(?:pudyn:)?ProductModelName>([^<]+)</", null);
+                        String modelo = modelFound != null ? modelFound : (item.getModelo() != null ? item.getModelo() : "HP LaserJet");
+
+                        item.setContadorTotal(total);
+                        item.setContadorMono(mono);
+                        item.setContadorColor(color);
+                        item.setCopiasPrint(print);
+                        item.setCopiasCopiador(copy);
+                        item.setCopiasScanner(scan);
+
+                        return new HpDados(modelo, serial, total, print, copy, scan,
+                                simplex, simplex, 0, duplex, duplex, 0, 0);
+                    }
+                } catch (Exception ignored) {}
+            }
+        } catch (Exception e) {
+            log.debug("Nao foi possivel extrair XML HP de {}: {}", ip, e.getMessage());
+        }
+
+        return null;
+    }
+
+    private boolean tirarScreenshotHp(String chromePath, ColetaContadorItem item, HpDados dados, File arquivoDestino) {
+        Path tempHtml = null;
+        try {
+            String html = gerarHtmlComprovanteHp(item, dados);
+            tempHtml = Files.createTempFile("hp_ews_", ".html");
+            Files.writeString(tempHtml, html, StandardCharsets.UTF_8);
+
+            return tirarScreenshot(chromePath, tempHtml.toUri().toString(), arquivoDestino);
+        } catch (Exception e) {
+            log.warn("Erro ao gerar comprovante visual HP para {}: {}", item.getIp(), e.getMessage());
+            return tirarScreenshot(chromePath, "http://" + item.getIp() + "/sws/index.html", arquivoDestino);
+        } finally {
+            if (tempHtml != null) {
+                try { Files.deleteIfExists(tempHtml); } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    private String gerarHtmlComprovanteHp(ColetaContadorItem item, HpDados d) {
+        String modelo = d != null && d.modelo() != null ? d.modelo() : (item.getModelo() != null ? item.getModelo() : "HP Laser MFP 432");
+        String ip = item.getIp() != null ? item.getIp() : "";
+        String serial = d != null && d.serial() != null ? d.serial() : "N/D";
+
+        String totalGeral = d != null ? formatarMilhar(d.total()) : (item.getContadorTotal() != null ? formatarMilhar(item.getContadorTotal()) : "0");
+        String totalPrint = d != null ? formatarMilhar(d.print()) : (item.getCopiasPrint() != null ? formatarMilhar(item.getCopiasPrint()) : "0");
+        String totalCopy = d != null ? formatarMilhar(d.copy()) : (item.getCopiasCopiador() != null ? formatarMilhar(item.getCopiasCopiador()) : "0");
+        String totalScanner = d != null ? formatarMilhar(d.scanner()) : (item.getCopiasScanner() != null ? formatarMilhar(item.getCopiasScanner()) : "0");
+
+        String simplexPrint = d != null ? formatarMilhar(d.simplexPrint()) : "0";
+        String simplexReport = d != null ? formatarMilhar(d.simplexReport()) : "0";
+        String simplexTotal = d != null ? formatarMilhar(d.simplexTotal()) : "0";
+
+        String duplexPrint = d != null ? formatarMilhar(d.duplexPrint()) : "0";
+        String duplexReport = d != null ? formatarMilhar(d.duplexReport()) : "0";
+        String duplexTotal = d != null ? formatarMilhar(d.duplexTotal()) : "0";
+
+        String reportTotal = d != null ? formatarMilhar(d.reportTotal()) : "0";
+
+        String template = """
+            <!DOCTYPE html>
+            <html lang="pt-BR">
+            <head>
+            <meta charset="UTF-8">
+            <title>HP Embedded Web Server - Contadores de uso</title>
+            <style>
+              * { box-sizing: border-box; margin: 0; padding: 0; }
+              html, body {
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+                background: #f1f5f9;
+                font-family: "Segoe UI", Arial, Tahoma, sans-serif;
+                color: #1e293b;
+                font-size: 12px;
+              }
+              body {
+                padding: 12px 18px;
+              }
+              .container {
+                background: #fff;
+                border-radius: 6px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+                overflow: hidden;
+                border: 1px solid #cbd5e1;
+              }
+              .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                background: linear-gradient(135deg, #007dba 0%, #005080 100%);
+                color: #fff;
+                padding: 8px 18px;
+              }
+              .brand {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+              }
+              .hp-logo {
+                width: 36px;
+                height: 36px;
+                background: #fff;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: #007dba;
+                font-size: 22px;
+                font-weight: 900;
+                font-family: Arial, sans-serif;
+                font-style: italic;
+                line-height: 1;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+              }
+              .brand-text h1 {
+                font-size: 18px;
+                font-weight: 700;
+                letter-spacing: -0.2px;
+              }
+              .brand-text span {
+                font-size: 11px;
+                color: #bae6fd;
+              }
+              .device-badge {
+                text-align: right;
+                font-size: 11px;
+              }
+              .device-badge strong {
+                font-size: 13px;
+                color: #fff;
+              }
+              .nav-tabs {
+                display: flex;
+                background: #003e66;
+                padding: 0 14px;
+              }
+              .nav-tab {
+                padding: 7px 16px;
+                color: #93c5fd;
+                font-weight: 600;
+                font-size: 12px;
+                border-bottom: 3px solid transparent;
+              }
+              .nav-tab.active {
+                color: #fff;
+                background: #005080;
+                border-bottom: 3px solid #38bdf8;
+              }
+              .sub-tabs {
+                display: flex;
+                background: #e2e8f0;
+                padding: 6px 16px;
+                border-bottom: 1px solid #cbd5e1;
+                gap: 10px;
+              }
+              .sub-tab {
+                padding: 4px 12px;
+                border-radius: 3px;
+                font-size: 11px;
+                color: #475569;
+                font-weight: 500;
+              }
+              .sub-tab.active {
+                background: #fff;
+                color: #007dba;
+                font-weight: 700;
+                border: 1px solid #cbd5e1;
+                border-bottom-color: #fff;
+              }
+              .content {
+                padding: 14px 18px;
+              }
+              .info-meta {
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                border-radius: 4px;
+                padding: 8px 14px;
+                margin-bottom: 12px;
+                gap: 10px;
+              }
+              .meta-item {
+                display: flex;
+                flex-direction: column;
+              }
+              .meta-label {
+                font-size: 10px;
+                color: #64748b;
+                text-transform: uppercase;
+                font-weight: 600;
+                margin-bottom: 2px;
+              }
+              .meta-value {
+                font-size: 12.5px;
+                font-weight: 700;
+                color: #0f172a;
+              }
+              .meta-status-ok {
+                color: #16a34a;
+                font-weight: 700;
+              }
+              .section-title {
+                font-size: 12px;
+                font-weight: 700;
+                color: #0f172a;
+                margin: 10px 0 6px 0;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+              }
+              .section-title::before {
+                content: "";
+                display: inline-block;
+                width: 4px;
+                height: 12px;
+                background: #007dba;
+                border-radius: 2px;
+              }
+              table.counter-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 10px;
+                font-size: 11.5px;
+              }
+              table.counter-table th {
+                background: #e2e8f0;
+                color: #334155;
+                font-weight: 700;
+                padding: 6px 10px;
+                text-align: left;
+                border: 1px solid #cbd5e1;
+              }
+              table.counter-table th:last-child,
+              table.counter-table td:last-child {
+                text-align: right;
+              }
+              table.counter-table th:nth-child(2),
+              table.counter-table td:nth-child(2),
+              table.counter-table th:nth-child(3),
+              table.counter-table td:nth-child(3) {
+                text-align: right;
+              }
+              table.counter-table td {
+                padding: 5px 10px;
+                border: 1px solid #e2e8f0;
+                color: #334155;
+              }
+              table.counter-table tr:nth-child(even) td {
+                background: #f8fafc;
+              }
+              table.counter-table tr.highlight-row td {
+                background: #e0f2fe;
+                font-weight: 700;
+                color: #0369a1;
+                font-size: 12.5px;
+              }
+              .summary-cards {
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
+                gap: 12px;
+                margin-bottom: 12px;
+              }
+              .summary-card {
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                border-radius: 5px;
+                padding: 8px 12px;
+                border-left: 4px solid #007dba;
+              }
+              .card-label {
+                font-size: 10px;
+                color: #64748b;
+                font-weight: 600;
+                text-transform: uppercase;
+              }
+              .card-val {
+                font-size: 19px;
+                font-weight: 800;
+                color: #0f172a;
+                margin-top: 2px;
+              }
+              .footer {
+                display: flex;
+                justify-content: space-between;
+                font-size: 10px;
+                color: #94a3b8;
+                margin-top: 8px;
+                padding-top: 6px;
+                border-top: 1px solid #e2e8f0;
+              }
+            </style>
+            </head>
+            <body>
+            <div class="container">
+              <div class="header">
+                <div class="brand">
+                  <div class="hp-logo">hp</div>
+                  <div class="brand-text">
+                    <h1>HP Embedded Web Server</h1>
+                    <span>Serviço Web Integrado</span>
+                  </div>
+                </div>
+                <div class="device-badge">
+                  <strong>{{MODELO}}</strong><br>
+                  <span>HP LaserJet / MFP Series</span>
+                </div>
+              </div>
+
+              <div class="nav-tabs">
+                <div class="nav-tab">Início</div>
+                <div class="nav-tab active">Informações</div>
+                <div class="nav-tab">Configurações</div>
+                <div class="nav-tab">Rede</div>
+                <div class="nav-tab">Segurança</div>
+              </div>
+
+              <div class="sub-tabs">
+                <div class="sub-tab">Status do Dispositivo</div>
+                <div class="sub-tab">Suprimentos</div>
+                <div class="sub-tab active">Contadores de uso</div>
+                <div class="sub-tab">Configurações Atuais</div>
+                <div class="sub-tab">Imprimir Informações</div>
+              </div>
+
+              <div class="content">
+                <div class="info-meta">
+                  <div class="meta-item">
+                    <span class="meta-label">Modelo</span>
+                    <span class="meta-value">{{MODELO}}</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Endereço IPv4</span>
+                    <span class="meta-value">{{IP}}</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Número de Série</span>
+                    <span class="meta-value">{{SERIAL}}</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Status do Equipamento</span>
+                    <span class="meta-value meta-status-ok">Operacional / Online</span>
+                  </div>
+                </div>
+
+                <div class="summary-cards">
+                  <div class="summary-card" style="border-left-color: #007dba;">
+                    <div class="card-label">Contador Total Geral</div>
+                    <div class="card-val" style="color: #007dba;">{{TOTAL_GERAL}}</div>
+                  </div>
+                  <div class="summary-card" style="border-left-color: #0284c7;">
+                    <div class="card-label">Impressões (Print)</div>
+                    <div class="card-val">{{TOTAL_PRINT}}</div>
+                  </div>
+                  <div class="summary-card" style="border-left-color: #0ea5e9;">
+                    <div class="card-label">Cópias Realizadas</div>
+                    <div class="card-val">{{TOTAL_COPY}}</div>
+                  </div>
+                  <div class="summary-card" style="border-left-color: #059669;">
+                    <div class="card-label">Digitalização / Scanner</div>
+                    <div class="card-val">{{TOTAL_SCANNER}}</div>
+                  </div>
+                </div>
+
+                <div class="section-title">Contadores de Uso Geral (Páginas Impressas)</div>
+                <table class="counter-table">
+                  <thead>
+                    <tr>
+                      <th>Tipo de Utilização</th>
+                      <th>Impressão</th>
+                      <th>Relatório</th>
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Monocromático Simples (Simplex)</td>
+                      <td>{{SIMPLEX_PRINT}}</td>
+                      <td>{{SIMPLEX_REPORT}}</td>
+                      <td>{{SIMPLEX_TOTAL}}</td>
+                    </tr>
+                    <tr>
+                      <td>Frente e Verso (Duplex)</td>
+                      <td>{{DUPLEX_PRINT}}</td>
+                      <td>{{DUPLEX_REPORT}}</td>
+                      <td>{{DUPLEX_TOTAL}}</td>
+                    </tr>
+                    <tr class="highlight-row">
+                      <td>Total de Impressões (Odômetro)</td>
+                      <td>{{TOTAL_PRINT}}</td>
+                      <td>{{REPORT_TOTAL}}</td>
+                      <td>{{TOTAL_GERAL}}</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <div class="section-title">Detalhamento de Funções do Equipamento</div>
+                <table class="counter-table">
+                  <thead>
+                    <tr>
+                      <th>Módulo / Função</th>
+                      <th>Quantidade Total</th>
+                      <th>Detalhamento</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Impressão de Documentos (Print)</td>
+                      <td style="font-weight: 700;">{{TOTAL_PRINT}}</td>
+                      <td style="color: #64748b;">Trabalhos enviados via rede / PC</td>
+                    </tr>
+                    <tr>
+                      <td>Copiadora (Cópia direta no vidro/alimentador)</td>
+                      <td style="font-weight: 700;">{{TOTAL_COPY}}</td>
+                      <td style="color: #64748b;">Trabalhos diretos de reprografia</td>
+                    </tr>
+                    <tr>
+                      <td>Digitalização / Scanner (Envio de rede)</td>
+                      <td style="font-weight: 700;">{{TOTAL_SCANNER}}</td>
+                      <td style="color: #64748b;">Digitalizações para pasta de rede / FTP / USB / PC</td>
+                    </tr>
+                    <tr>
+                      <td>Impressão em Duplex</td>
+                      <td style="font-weight: 700;">{{DUPLEX_TOTAL}}</td>
+                      <td style="color: #64748b;">Economia de papel frente e verso</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <div class="footer">
+                  <span>HP Embedded Web Server - HP Development Company, L.P.</span>
                   <span>Comprovante oficial de medição de contadores de rede</span>
                 </div>
               </div>
