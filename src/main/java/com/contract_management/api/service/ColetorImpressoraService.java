@@ -14,9 +14,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLEngine;
 import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509ExtendedTrustManager;
 import javax.net.ssl.X509TrustManager;
 import java.io.*;
+import java.security.Security;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.URI;
@@ -117,19 +120,28 @@ public class ColetorImpressoraService {
 
     private void configurarHttpClient() {
         try {
-            TrustManager[] trustAllCerts = new TrustManager[]{
-                new X509TrustManager() {
-                    public X509Certificate[] getAcceptedIssuers() { return null; }
-                    public void checkClientTrusted(X509Certificate[] certs, String authType) { }
-                    public void checkServerTrusted(X509Certificate[] certs, String authType) { }
-                }
+            // Habilita suites de cifras legadas (como TLS_RSA) utilizadas por firmwares de impressoras locais
+            try {
+                Security.setProperty("jdk.tls.disabledAlgorithms", "SSLv3, RC4, DES, MD5withRSA, DH keySize < 1024, EC keySize < 224, 3DES_EDE_CBC");
+            } catch (Exception ignored) {}
+
+            X509ExtendedTrustManager trustAllExtended = new X509ExtendedTrustManager() {
+                @Override public void checkClientTrusted(X509Certificate[] chain, String authType, Socket socket) {}
+                @Override public void checkServerTrusted(X509Certificate[] chain, String authType, Socket socket) {}
+                @Override public void checkClientTrusted(X509Certificate[] chain, String authType, SSLEngine engine) {}
+                @Override public void checkServerTrusted(X509Certificate[] chain, String authType, SSLEngine engine) {}
+                @Override public void checkClientTrusted(X509Certificate[] chain, String authType) {}
+                @Override public void checkServerTrusted(X509Certificate[] chain, String authType) {}
+                @Override public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
             };
+
             SSLContext sslContext = SSLContext.getInstance("TLS");
-            sslContext.init(null, trustAllCerts, new SecureRandom());
+            sslContext.init(null, new TrustManager[]{trustAllExtended}, new SecureRandom());
 
             this.httpClient = HttpClient.newBuilder()
+                    .version(HttpClient.Version.HTTP_1_1)
                     .sslContext(sslContext)
-                    .connectTimeout(Duration.ofSeconds(3))
+                    .connectTimeout(Duration.ofSeconds(4))
                     .followRedirects(HttpClient.Redirect.ALWAYS)
                     .build();
         } catch (Exception e) {
@@ -550,46 +562,52 @@ public class ColetorImpressoraService {
     ) {}
 
     private SamsungDados extrairDadosSamsung(ColetaContadorItem item) {
-        try {
-            String jsonUrl = "http://" + item.getIp() + "/sws/app/information/counters/counters.json";
-            HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(jsonUrl))
-                    .timeout(Duration.ofSeconds(4))
-                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-                    .GET()
-                    .build();
+        String ip = item.getIp();
+        String[] samsungUrls = {
+                "https://" + ip + "/sws/app/information/counters/counters.json",
+                "http://" + ip + "/sws/app/information/counters/counters.json"
+        };
+        for (String jsonUrl : samsungUrls) {
+            try {
+                HttpRequest req = HttpRequest.newBuilder()
+                        .uri(URI.create(jsonUrl))
+                        .timeout(Duration.ofSeconds(4))
+                        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                        .GET()
+                        .build();
 
-            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() == 200 && resp.body() != null) {
-                String json = resp.body();
+                HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+                if (resp.statusCode() == 200 && resp.body() != null && resp.body().contains("GXI_BILLING_TOTAL_IMP_CNT")) {
+                    String json = resp.body();
 
-                int total = extrairIntRegex(json, "GXI_BILLING_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
-                int print = extrairIntRegex(json, "GXI_BILLING_PRINT_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
-                int copy = extrairIntRegex(json, "GXI_BILLING_COPY_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
-                int scanner = extrairIntRegex(json, "GXI_BILLING_SEND_TO_TOTAL_CNT\\s*:\\s*(\\d+)", 0);
-                int simplexTotal = extrairIntRegex(json, "GXI_BILLING_SIMPLEX_BW_TOTAL_CNT\\s*:\\s*(\\d+)", 0);
-                int simplexPrint = extrairIntRegex(json, "GXI_BILLING_SIMPLEX_BW_PRINT_CNT\\s*:\\s*(\\d+)", 0);
-                int simplexReport = extrairIntRegex(json, "GXI_BILLING_SIMPLEX_BW_REPORT_CNT\\s*:\\s*(\\d+)", 0);
-                int duplexTotal = extrairIntRegex(json, "GXI_BILLING_DUPLEX_BW_TOTAL_CNT\\s*:\\s*(\\d+)", 0);
-                int duplexPrint = extrairIntRegex(json, "GXI_BILLING_DUPLEX_BW_PRINT_CNT\\s*:\\s*(\\d+)", 0);
-                int duplexReport = extrairIntRegex(json, "GXI_BILLING_DUPLEX_BW_REPORT_CNT\\s*:\\s*(\\d+)", 0);
-                int reportTotal = extrairIntRegex(json, "GXI_BILLING_REPORT_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
+                    int total = extrairIntRegex(json, "GXI_BILLING_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
+                    int print = extrairIntRegex(json, "GXI_BILLING_PRINT_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
+                    int copy = extrairIntRegex(json, "GXI_BILLING_COPY_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
+                    int scanner = extrairIntRegex(json, "GXI_BILLING_SEND_TO_TOTAL_CNT\\s*:\\s*(\\d+)", 0);
+                    int simplexTotal = extrairIntRegex(json, "GXI_BILLING_SIMPLEX_BW_TOTAL_CNT\\s*:\\s*(\\d+)", 0);
+                    int simplexPrint = extrairIntRegex(json, "GXI_BILLING_SIMPLEX_BW_PRINT_CNT\\s*:\\s*(\\d+)", 0);
+                    int simplexReport = extrairIntRegex(json, "GXI_BILLING_SIMPLEX_BW_REPORT_CNT\\s*:\\s*(\\d+)", 0);
+                    int duplexTotal = extrairIntRegex(json, "GXI_BILLING_DUPLEX_BW_TOTAL_CNT\\s*:\\s*(\\d+)", 0);
+                    int duplexPrint = extrairIntRegex(json, "GXI_BILLING_DUPLEX_BW_PRINT_CNT\\s*:\\s*(\\d+)", 0);
+                    int duplexReport = extrairIntRegex(json, "GXI_BILLING_DUPLEX_BW_REPORT_CNT\\s*:\\s*(\\d+)", 0);
+                    int reportTotal = extrairIntRegex(json, "GXI_BILLING_REPORT_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
 
-                String serial = extrairStringRegex(json, "GXI_SYS_SERIAL_NUM\\s*:\\s*\"([^\"]+)\"", "N/D");
+                    String serial = extrairStringRegex(json, "GXI_SYS_SERIAL_NUM\\s*:\\s*\"([^\"]+)\"", "N/D");
 
-                item.setContadorTotal(total);
-                item.setContadorMono(total);
-                item.setContadorColor(0);
-                item.setCopiasPrint(print);
-                item.setCopiasCopiador(copy);
-                item.setCopiasScanner(scanner);
+                    item.setContadorTotal(total);
+                    item.setContadorMono(total);
+                    item.setContadorColor(0);
+                    item.setCopiasPrint(print);
+                    item.setCopiasCopiador(copy);
+                    item.setCopiasScanner(scanner);
 
-                return new SamsungDados(serial, total, print, copy, scanner,
-                        simplexTotal, simplexPrint, simplexReport,
-                        duplexTotal, duplexPrint, duplexReport, reportTotal);
+                    return new SamsungDados(serial, total, print, copy, scanner,
+                            simplexTotal, simplexPrint, simplexReport,
+                            duplexTotal, duplexPrint, duplexReport, reportTotal);
+                }
+            } catch (Exception e) {
+                log.debug("Nao foi possivel extrair JSON da Samsung {} via {}: {}", ip, jsonUrl, e.getMessage());
             }
-        } catch (Exception e) {
-            log.debug("Nao foi possivel extrair JSON da Samsung {}: {}", item.getIp(), e.getMessage());
         }
         return null;
     }
@@ -1047,65 +1065,73 @@ public class ColetorImpressoraService {
         String ip = item.getIp();
 
         // 1. Tenta arquitetura HP SWS (HP Laser MFP 432, etc.)
-        try {
-            String jsonUrl = "http://" + ip + "/sws/app/information/counters/counters.json";
-            HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(jsonUrl))
-                    .timeout(Duration.ofSeconds(4))
-                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-                    .GET()
-                    .build();
+        String[] swsUrls = {
+                "https://" + ip + "/sws/app/information/counters/counters.json",
+                "http://" + ip + "/sws/app/information/counters/counters.json"
+        };
+        for (String jsonUrl : swsUrls) {
+            try {
+                HttpRequest req = HttpRequest.newBuilder()
+                        .uri(URI.create(jsonUrl))
+                        .timeout(Duration.ofSeconds(4))
+                        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                        .GET()
+                        .build();
 
-            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() == 200 && resp.body() != null && resp.body().contains("GXI_BILLING_TOTAL_IMP_CNT")) {
-                String json = resp.body();
+                HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+                if (resp.statusCode() == 200 && resp.body() != null && resp.body().contains("GXI_BILLING_TOTAL_IMP_CNT")) {
+                    String json = resp.body();
 
-                int total = extrairIntRegex(json, "GXI_BILLING_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
-                int print = extrairIntRegex(json, "GXI_BILLING_PRINT_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
-                int copy = extrairIntRegex(json, "GXI_BILLING_COPY_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
-                int scanner = extrairIntRegex(json, "GXI_BILLING_SEND_TO_TOTAL_CNT\\s*:\\s*(\\d+)", 0);
-                int simplexTotal = extrairIntRegex(json, "GXI_BILLING_SIMPLEX_BW_TOTAL_CNT\\s*:\\s*(\\d+)", 0);
-                int simplexPrint = extrairIntRegex(json, "GXI_BILLING_SIMPLEX_BW_PRINT_CNT\\s*:\\s*(\\d+)", 0);
-                int simplexReport = extrairIntRegex(json, "GXI_BILLING_SIMPLEX_BW_REPORT_CNT\\s*:\\s*(\\d+)", 0);
-                int duplexTotal = extrairIntRegex(json, "GXI_BILLING_DUPLEX_BW_TOTAL_CNT\\s*:\\s*(\\d+)", 0);
-                int duplexPrint = extrairIntRegex(json, "GXI_BILLING_DUPLEX_BW_PRINT_CNT\\s*:\\s*(\\d+)", 0);
-                int duplexReport = extrairIntRegex(json, "GXI_BILLING_DUPLEX_BW_REPORT_CNT\\s*:\\s*(\\d+)", 0);
-                int reportTotal = extrairIntRegex(json, "GXI_BILLING_REPORT_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
+                    int total = extrairIntRegex(json, "GXI_BILLING_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
+                    int print = extrairIntRegex(json, "GXI_BILLING_PRINT_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
+                    int copy = extrairIntRegex(json, "GXI_BILLING_COPY_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
+                    int scanner = extrairIntRegex(json, "GXI_BILLING_SEND_TO_TOTAL_CNT\\s*:\\s*(\\d+)", 0);
+                    int simplexTotal = extrairIntRegex(json, "GXI_BILLING_SIMPLEX_BW_TOTAL_CNT\\s*:\\s*(\\d+)", 0);
+                    int simplexPrint = extrairIntRegex(json, "GXI_BILLING_SIMPLEX_BW_PRINT_CNT\\s*:\\s*(\\d+)", 0);
+                    int simplexReport = extrairIntRegex(json, "GXI_BILLING_SIMPLEX_BW_REPORT_CNT\\s*:\\s*(\\d+)", 0);
+                    int duplexTotal = extrairIntRegex(json, "GXI_BILLING_DUPLEX_BW_TOTAL_CNT\\s*:\\s*(\\d+)", 0);
+                    int duplexPrint = extrairIntRegex(json, "GXI_BILLING_DUPLEX_BW_PRINT_CNT\\s*:\\s*(\\d+)", 0);
+                    int duplexReport = extrairIntRegex(json, "GXI_BILLING_DUPLEX_BW_REPORT_CNT\\s*:\\s*(\\d+)", 0);
+                    int reportTotal = extrairIntRegex(json, "GXI_BILLING_REPORT_TOTAL_IMP_CNT\\s*:\\s*(\\d+)", 0);
 
-                String serial = extrairStringRegex(json, "GXI_SYS_SERIAL_NUM\\s*:\\s*\"([^\"]+)\"", "N/D");
-                String modelo = item.getModelo() != null ? item.getModelo() : "HP Laser MFP 432";
+                    String serial = extrairStringRegex(json, "GXI_SYS_SERIAL_NUM\\s*:\\s*\"([^\"]+)\"", "N/D");
+                    String modelo = item.getModelo() != null ? item.getModelo() : "HP Laser MFP 432";
 
-                // Consulta refinada do modelo no home.json se disponivel
-                try {
-                    String homeUrl = "http://" + ip + "/sws/app/information/home/home.json";
-                    HttpRequest homeReq = HttpRequest.newBuilder()
-                            .uri(URI.create(homeUrl))
-                            .timeout(Duration.ofSeconds(3))
-                            .header("User-Agent", "Mozilla/5.0")
-                            .GET()
-                            .build();
-                    HttpResponse<String> homeResp = httpClient.send(homeReq, HttpResponse.BodyHandlers.ofString());
-                    if (homeResp.statusCode() == 200 && homeResp.body() != null) {
-                        String modelFound = extrairStringRegex(homeResp.body(), "model_name\\s*:\\s*\"([^\"]+)\"", null);
-                        if (modelFound != null && !modelFound.isBlank()) {
-                            modelo = modelFound;
-                        }
+                    // Consulta refinada do modelo no home.json se disponivel
+                    for (String homeScheme : List.of("https://", "http://")) {
+                        try {
+                            String homeUrl = homeScheme + ip + "/sws/app/information/home/home.json";
+                            HttpRequest homeReq = HttpRequest.newBuilder()
+                                    .uri(URI.create(homeUrl))
+                                    .timeout(Duration.ofSeconds(3))
+                                    .header("User-Agent", "Mozilla/5.0")
+                                    .GET()
+                                    .build();
+                            HttpResponse<String> homeResp = httpClient.send(homeReq, HttpResponse.BodyHandlers.ofString());
+                            if (homeResp.statusCode() == 200 && homeResp.body() != null) {
+                                String modelFound = extrairStringRegex(homeResp.body(), "model_name\\s*:\\s*\"([^\"]+)\"", null);
+                                if (modelFound != null && !modelFound.isBlank()) {
+                                    modelo = modelFound;
+                                    break;
+                                }
+                            }
+                        } catch (Exception ignored) {}
                     }
-                } catch (Exception ignored) {}
 
-                item.setContadorTotal(total);
-                item.setContadorMono(total);
-                item.setContadorColor(0);
-                item.setCopiasPrint(print);
-                item.setCopiasCopiador(copy);
-                item.setCopiasScanner(scanner);
+                    item.setContadorTotal(total);
+                    item.setContadorMono(total);
+                    item.setContadorColor(0);
+                    item.setCopiasPrint(print);
+                    item.setCopiasCopiador(copy);
+                    item.setCopiasScanner(scanner);
 
-                return new HpDados(modelo, serial, total, print, copy, scanner,
-                        simplexTotal, simplexPrint, simplexReport,
-                        duplexTotal, duplexPrint, duplexReport, reportTotal);
+                    return new HpDados(modelo, serial, total, print, copy, scanner,
+                            simplexTotal, simplexPrint, simplexReport,
+                            duplexTotal, duplexPrint, duplexReport, reportTotal);
+                }
+            } catch (Exception e) {
+                log.debug("Nao foi possivel extrair SWS JSON da HP {} via {}: {}", ip, jsonUrl, e.getMessage());
             }
-        } catch (Exception e) {
-            log.debug("Nao foi possivel extrair SWS JSON da HP {}: {}", ip, e.getMessage());
         }
 
         // 2. Tenta arquitetura padrao HP EWS XML (ProductUsageDyn.xml)
