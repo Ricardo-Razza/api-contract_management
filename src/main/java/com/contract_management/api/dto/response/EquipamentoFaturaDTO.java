@@ -28,4 +28,6 @@ public class EquipamentoFaturaDTO {
     private BigDecimal valorLocacao;
     private BigDecimal valorExcedente;
     private BigDecimal valorTotal;
+    private String origemLeitura;
+    private String observacoes;
 }

@@ -75,6 +75,19 @@ public class LeituraContadorService {
 
         BigDecimal proporcao = dto.getProporcao() != null ? dto.getProporcao() : BigDecimal.ONE;
 
+        // Se houver máquina(s) retirada(s) por Swap no mesmo mês e itemPedido, consolida as cópias
+        int copiasMonoSwap = 0;
+        int copiasColorSwap = 0;
+        if (impressora.getItemPedido() != null) {
+            List<LeituraContador> swaps = leituraRepository.findSwapsRetiradaPorItemPedidoEMes(
+                    impressora.getItemPedido(), dto.getMesReferencia(), dto.getAnoReferencia(), impressora.getId());
+            copiasMonoSwap = swaps.stream().mapToInt(LeituraContador::getCopiasMono).sum();
+            copiasColorSwap = swaps.stream().mapToInt(LeituraContador::getCopiasColor).sum();
+        }
+
+        int copiasMonoCombinadas = copiasMono + copiasMonoSwap;
+        int copiasColorCombinadas = copiasColor + copiasColorSwap;
+
         // Regras de Lote e Franquia
         int franquiaMono = 0;
         int franquiaColor = 0;
@@ -89,8 +102,8 @@ public class LeituraContadorService {
             franquiaMono = BigDecimal.valueOf(lote.getFranquiaMono()).multiply(proporcao).setScale(0, RoundingMode.HALF_UP).intValue();
             franquiaColor = BigDecimal.valueOf(lote.getFranquiaColor()).multiply(proporcao).setScale(0, RoundingMode.HALF_UP).intValue();
 
-            excedenteMono = Math.max(0, copiasMono - franquiaMono);
-            excedenteColor = Math.max(0, copiasColor - franquiaColor);
+            excedenteMono = Math.max(0, copiasMonoCombinadas - franquiaMono);
+            excedenteColor = Math.max(0, copiasColorCombinadas - franquiaColor);
 
             valorLocacao = lote.getValorLocacaoMensal().multiply(proporcao).setScale(2, RoundingMode.HALF_UP);
             valorExcMono = lote.getValorExcedenteMono().multiply(BigDecimal.valueOf(excedenteMono)).setScale(2, RoundingMode.HALF_UP);
@@ -109,6 +122,7 @@ public class LeituraContadorService {
                         .anoReferencia(dto.getAnoReferencia())
                         .build());
 
+        leitura.setInstalacao(instalacao);
         leitura.setDataLeitura(dto.getDataLeitura());
         leitura.setLeituraMonoAnterior(leituraMonoAnterior);
         leitura.setLeituraMonoAtual(dto.getLeituraMonoAtual());
@@ -126,7 +140,18 @@ public class LeituraContadorService {
         leitura.setValorExcedenteColor(valorExcColor);
         leitura.setValorTotal(valorTotal);
         leitura.setOrigemLeitura(dto.getOrigemLeitura() != null ? dto.getOrigemLeitura() : "MANUAL");
-        leitura.setObservacoes(dto.getObservacoes());
+
+        if (copiasMonoSwap > 0 || copiasColorSwap > 0) {
+            String obsSwap = String.format("Consolidação de Swap (Item %d): %d cópias mono nesta máquina + %d cópias da máquina substituída = %d cópias totais no período.",
+                    impressora.getItemPedido(), copiasMono, copiasMonoSwap, copiasMonoCombinadas);
+            if (dto.getObservacoes() != null && !dto.getObservacoes().isBlank()) {
+                leitura.setObservacoes(dto.getObservacoes() + " | " + obsSwap);
+            } else {
+                leitura.setObservacoes(obsSwap);
+            }
+        } else {
+            leitura.setObservacoes(dto.getObservacoes());
+        }
 
         LeituraContador salva = leituraRepository.save(leitura);
         return toResponseDTO(salva);

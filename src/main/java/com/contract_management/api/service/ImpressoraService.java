@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -184,6 +185,8 @@ public class ImpressoraService {
                 .orElseThrow(() -> new IllegalStateException("Impressora não possui instalação ativa"));
 
         LocalDate dataSub = dto.getDataSubstituicao() != null ? dto.getDataSubstituicao() : LocalDate.now();
+        int mesSub = dataSub.getMonthValue();
+        int anoSub = dataSub.getYear();
 
         // 1. Encerra instalação da máquina com defeito
         instalacaoAtual.setDataRetirada(dataSub);
@@ -196,7 +199,57 @@ public class ImpressoraService {
         impressoraAntiga.setAtivo(false);
         impressoraRepository.save(impressoraAntiga);
 
-        // 2. Cadastra a nova impressora substituta
+        // 2. Registra automaticamente a medição parcial proporcional da máquina retirada (origem SWAP_RETIRADA)
+        List<LeituraContador> anterioresAntiga = leituraRepository.findUltimasLeiturasPorImpressora(impressoraAntiga.getId());
+        int leituraMonoAnterior = instalacaoAtual.getContadorInstalacaoMono() != null ? instalacaoAtual.getContadorInstalacaoMono() : 0;
+        int leituraColorAnterior = instalacaoAtual.getContadorInstalacaoColor() != null ? instalacaoAtual.getContadorInstalacaoColor() : 0;
+
+        for (LeituraContador ant : anterioresAntiga) {
+            if (ant.getAnoReferencia() < anoSub || (ant.getAnoReferencia().equals(anoSub) && ant.getMesReferencia() < mesSub)) {
+                leituraMonoAnterior = ant.getLeituraMonoAtual() != null ? ant.getLeituraMonoAtual() : 0;
+                leituraColorAnterior = ant.getLeituraColorAtual() != null ? ant.getLeituraColorAtual() : 0;
+                break;
+            }
+        }
+
+        int finalMono = dto.getContadorFinalMonoRetirada() != null ? dto.getContadorFinalMonoRetirada() : leituraMonoAnterior;
+        int finalColor = dto.getContadorFinalColorRetirada() != null ? dto.getContadorFinalColorRetirada() : leituraColorAnterior;
+        int copiasMonoAntiga = Math.max(0, finalMono - leituraMonoAnterior);
+        int copiasColorAntiga = Math.max(0, finalColor - leituraColorAnterior);
+
+        LeituraContador leituraSwapRetirada = leituraRepository
+                .findByImpressoraIdAndMesReferenciaAndAnoReferencia(impressoraAntiga.getId(), mesSub, anoSub)
+                .orElse(LeituraContador.builder()
+                        .impressora(impressoraAntiga)
+                        .instalacao(instalacaoAtual)
+                        .mesReferencia(mesSub)
+                        .anoReferencia(anoSub)
+                        .build());
+
+        leituraSwapRetirada.setInstalacao(instalacaoAtual);
+        leituraSwapRetirada.setDataLeitura(dataSub);
+        leituraSwapRetirada.setLeituraMonoAnterior(leituraMonoAnterior);
+        leituraSwapRetirada.setLeituraMonoAtual(finalMono);
+        leituraSwapRetirada.setCopiasMono(copiasMonoAntiga);
+        leituraSwapRetirada.setLeituraColorAnterior(leituraColorAnterior);
+        leituraSwapRetirada.setLeituraColorAtual(finalColor);
+        leituraSwapRetirada.setCopiasColor(copiasColorAntiga);
+        leituraSwapRetirada.setProporcao(BigDecimal.ZERO);
+        leituraSwapRetirada.setFranquiaMonoAplicada(0);
+        leituraSwapRetirada.setFranquiaColorAplicada(0);
+        leituraSwapRetirada.setExcedenteMono(0);
+        leituraSwapRetirada.setExcedenteColor(0);
+        leituraSwapRetirada.setValorLocacao(BigDecimal.ZERO);
+        leituraSwapRetirada.setValorExcedenteMono(BigDecimal.ZERO);
+        leituraSwapRetirada.setValorExcedenteColor(BigDecimal.ZERO);
+        leituraSwapRetirada.setValorTotal(BigDecimal.ZERO);
+        leituraSwapRetirada.setOrigemLeitura("SWAP_RETIRADA");
+        leituraSwapRetirada.setObservacoes("Substituída em " + dataSub + " por defeito: " + dto.getMotivoDefeito() +
+                ". Cópias parciais (" + copiasMonoAntiga + " mono) consolidadas na máquina substituta.");
+
+        leituraRepository.save(leituraSwapRetirada);
+
+        // 3. Cadastra a nova impressora substituta
         Impressora novaImpressora = Impressora.builder()
                 .itemPedido(impressoraAntiga.getItemPedido())
                 .numeroSerie(dto.getNovoNumeroSerie())
@@ -210,7 +263,7 @@ public class ImpressoraService {
 
         Impressora novaSalva = impressoraRepository.save(novaImpressora);
 
-        // 3. Instala a nova impressora no mesmo local
+        // 4. Instala a nova impressora no mesmo local
         InstalacaoImpressora novaInstalacao = InstalacaoImpressora.builder()
                 .impressora(novaSalva)
                 .secretaria(instalacaoAtual.getSecretaria())

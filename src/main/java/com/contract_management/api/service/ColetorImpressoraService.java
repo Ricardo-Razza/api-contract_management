@@ -1,6 +1,7 @@
 package com.contract_management.api.service;
 
 import com.contract_management.api.dto.request.IniciarColetaRequestDTO;
+import com.contract_management.api.dto.request.LeituraContadorRequestDTO;
 import com.contract_management.api.dto.response.ColetaItemDTO;
 import com.contract_management.api.dto.response.ColetaProgressoDTO;
 import com.contract_management.api.dto.response.ColetaSessaoDTO;
@@ -19,6 +20,7 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509ExtendedTrustManager;
 import javax.net.ssl.X509TrustManager;
 import java.io.*;
+import java.math.BigDecimal;
 import java.security.Security;
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -57,6 +59,7 @@ public class ColetorImpressoraService {
     private final ImpressoraRepository impressoraRepository;
     private final InstalacaoImpressoraRepository instalacaoRepository;
     private final LeituraContadorRepository leituraRepository;
+    private final LeituraContadorService leituraContadorService;
     private final JdbcTemplate jdbcTemplate;
 
     private static final String BASE_UPLOAD_DIR = "uploads/contadores";
@@ -1725,52 +1728,23 @@ public class ColetorImpressoraService {
             if (impOpt.isEmpty()) continue;
             Impressora imp = impOpt.get();
 
-            Optional<LeituraContador> leituraExistente = leituraRepository.findByImpressoraIdAndMesReferenciaAndAnoReferencia(
-                    imp.getId(), sessao.getMesReferencia(), sessao.getAnoReferencia()
-            );
-
-            LeituraContador leitura;
-            if (leituraExistente.isPresent()) {
-                leitura = leituraExistente.get();
-            } else {
-                // Busca leitura do mes anterior para calcular saldo de copias
-                int mesAnterior = sessao.getMesReferencia() == 1 ? 12 : sessao.getMesReferencia() - 1;
-                int anoAnterior = sessao.getMesReferencia() == 1 ? sessao.getAnoReferencia() - 1 : sessao.getAnoReferencia();
-                int leituraAnteriorMono = 0;
-                int leituraAnteriorColor = 0;
-
-                Optional<LeituraContador> antOpt = leituraRepository.findByImpressoraIdAndMesReferenciaAndAnoReferencia(imp.getId(), mesAnterior, anoAnterior);
-                if (antOpt.isPresent()) {
-                    leituraAnteriorMono = antOpt.get().getLeituraMonoAtual();
-                    leituraAnteriorColor = antOpt.get().getLeituraColorAtual();
-                }
-
-                leitura = LeituraContador.builder()
-                        .impressora(imp)
-                        .mesReferencia(sessao.getMesReferencia())
-                        .anoReferencia(sessao.getAnoReferencia())
-                        .dataLeitura(LocalDate.now())
-                        .leituraMonoAnterior(leituraAnteriorMono)
-                        .leituraColorAnterior(leituraAnteriorColor)
-                        .build();
-            }
-
             boolean isColor = "COLOR".equalsIgnoreCase(imp.getTipoImpressao()) || (imp.getLote() != null && imp.getLote().getNumeroLote() == 3);
-            if (isColor && item.getContadorColor() != null) {
-                leitura.setLeituraColorAtual(item.getContadorColor());
-                leitura.setCopiasColor(Math.max(0, leitura.getLeituraColorAtual() - leitura.getLeituraColorAnterior()));
-                if (item.getContadorMono() != null) {
-                    leitura.setLeituraMonoAtual(item.getContadorMono());
-                    leitura.setCopiasMono(Math.max(0, leitura.getLeituraMonoAtual() - leitura.getLeituraMonoAnterior()));
-                }
-            } else {
-                leitura.setLeituraMonoAtual(item.getContadorTotal());
-                leitura.setCopiasMono(Math.max(0, leitura.getLeituraMonoAtual() - leitura.getLeituraMonoAnterior()));
-            }
+            Integer monoAtual = (item.getContadorMono() != null && item.getContadorMono() > 0) ? item.getContadorMono() : item.getContadorTotal();
+            Integer colorAtual = isColor && item.getContadorColor() != null ? item.getContadorColor() : 0;
 
-            leitura.setDataLeitura(LocalDate.now());
-            leitura.setObservacoes("Coletado automaticamente via sistema em " + LocalDateTime.now());
-            leituraRepository.save(leitura);
+            LeituraContadorRequestDTO requestDTO = LeituraContadorRequestDTO.builder()
+                    .impressoraId(imp.getId())
+                    .mesReferencia(sessao.getMesReferencia())
+                    .anoReferencia(sessao.getAnoReferencia())
+                    .dataLeitura(LocalDate.now())
+                    .leituraMonoAtual(monoAtual)
+                    .leituraColorAtual(colorAtual)
+                    .proporcao(BigDecimal.ONE)
+                    .origemLeitura("SISTEMA")
+                    .observacoes("Coletado automaticamente via sistema em " + LocalDateTime.now())
+                    .build();
+
+            leituraContadorService.lancarLeitura(requestDTO);
             gravadas++;
         }
 

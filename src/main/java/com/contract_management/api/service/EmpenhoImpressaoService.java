@@ -480,6 +480,8 @@ public class EmpenhoImpressaoService {
                     .valorLocacao(l.getValorLocacao())
                     .valorExcedente(l.getValorExcedenteMono().add(l.getValorExcedenteColor()))
                     .valorTotal(l.getValorTotal())
+                    .origemLeitura(l.getOrigemLeitura())
+                    .observacoes(l.getObservacoes())
                     .build();
         }).collect(Collectors.toList());
 
