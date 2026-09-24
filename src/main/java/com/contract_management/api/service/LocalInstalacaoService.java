@@ -44,9 +44,19 @@ public class LocalInstalacaoService {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             """);
 
-            jdbcTemplate.execute("""
+            sincronizarLocaisDasInstalacoes();
+            log.info("Tabela e locais de instalacao verificados com sucesso.");
+        } catch (Exception e) {
+            log.warn("Verificacao de tabela local_instalacao: {}", e.getMessage());
+        }
+    }
+
+    @Transactional
+    public int sincronizarLocaisDasInstalacoes() {
+        try {
+            return jdbcTemplate.update("""
                 INSERT INTO `local_instalacao` (`nome`, `secretaria_id`, `endereco`, `responsavel`, `ativo`)
-                SELECT i.local_instalacao, i.secretaria_id, MAX(i.endereco), MAX(i.responsavel), 1
+                SELECT TRIM(i.local_instalacao), i.secretaria_id, MAX(i.endereco), MAX(i.responsavel), 1
                 FROM `instalacao_impressora` i
                 WHERE i.local_instalacao IS NOT NULL AND TRIM(i.local_instalacao) <> ''
                   AND NOT EXISTS (
@@ -54,16 +64,23 @@ public class LocalInstalacaoService {
                       WHERE LOWER(TRIM(l.nome)) = LOWER(TRIM(i.local_instalacao)) 
                         AND l.secretaria_id = i.secretaria_id
                   )
-                GROUP BY i.local_instalacao, i.secretaria_id;
+                GROUP BY TRIM(i.local_instalacao), i.secretaria_id;
             """);
-            log.info("Tabela e locais de instalacao verificados com sucesso.");
         } catch (Exception e) {
-            log.warn("Verificacao de tabela local_instalacao: {}", e.getMessage());
+            log.warn("Falha ao sincronizar locais das instalacoes: {}", e.getMessage());
+            return 0;
         }
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<LocalInstalacaoResponseDTO> listarTodos(Long secretariaId) {
+        try {
+            if (localRepository.count() == 0) {
+                sincronizarLocaisDasInstalacoes();
+            }
+        } catch (Exception ignored) {
+        }
+
         List<LocalInstalacao> locais = (secretariaId != null)
                 ? localRepository.findBySecretariaIdAtivos(secretariaId)
                 : localRepository.findAllAtivosComSecretaria();

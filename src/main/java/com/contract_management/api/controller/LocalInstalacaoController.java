@@ -51,4 +51,11 @@ public class LocalInstalacaoController {
         localService.excluir(id);
         return ResponseEntity.noContent().build();
     }
+
+    @PostMapping("/sincronizar")
+    @Operation(summary = "Sincroniza locais a partir das instalações de impressoras")
+    public ResponseEntity<List<LocalInstalacaoResponseDTO>> sincronizar() {
+        localService.sincronizarLocaisDasInstalacoes();
+        return ResponseEntity.ok(localService.listarTodos(null));
+    }
 }
