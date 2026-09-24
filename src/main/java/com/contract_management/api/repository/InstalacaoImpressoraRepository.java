@@ -31,4 +31,6 @@ public interface InstalacaoImpressoraRepository extends JpaRepository<Instalacao
     long countByEmpenhoIdAndStatus(Long empenhoId, String status);
 
     List<InstalacaoImpressora> findByEmpenhoIdAndStatus(Long empenhoId, String status);
+
+    long countByLocalInstalacaoIgnoreCaseAndStatus(String localInstalacao, String status);
 }

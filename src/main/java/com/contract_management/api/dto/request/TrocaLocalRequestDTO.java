@@ -13,10 +13,11 @@ import java.time.LocalDate;
 @Builder
 public class TrocaLocalRequestDTO {
 
+    private Long localInstalacaoId;
+
     @NotNull(message = "A nova secretaria é obrigatória")
     private Long novaSecretariaId;
 
-    @NotBlank(message = "O novo local de instalação é obrigatório")
     private String novoLocalInstalacao;
 
     private String novoEndereco;

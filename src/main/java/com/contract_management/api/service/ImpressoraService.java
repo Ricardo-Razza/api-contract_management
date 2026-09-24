@@ -26,6 +26,7 @@ public class ImpressoraService {
     private final SecretariaRepository secretariaRepository;
     private final EmpenhoImpressaoRepository empenhoRepository;
     private final LeituraContadorRepository leituraRepository;
+    private final LocalInstalacaoRepository localRepository;
 
     @Transactional(readOnly = true)
     public List<ImpressoraResponseDTO> listarTodas() {
@@ -72,13 +73,26 @@ public class ImpressoraService {
 
         Impressora salva = impressoraRepository.save(impressora);
 
+        String localNome = dto.getLocalInstalacao();
+        String endereco = dto.getEndereco();
+        String responsavel = dto.getResponsavel();
+
+        if (dto.getLocalInstalacaoId() != null) {
+            LocalInstalacao local = localRepository.findById(dto.getLocalInstalacaoId()).orElse(null);
+            if (local != null) {
+                if (localNome == null || localNome.isBlank()) localNome = local.getNome();
+                if (endereco == null || endereco.isBlank()) endereco = local.getEndereco();
+                if (responsavel == null || responsavel.isBlank()) responsavel = local.getResponsavel();
+            }
+        }
+
         InstalacaoImpressora instalacao = InstalacaoImpressora.builder()
                 .impressora(salva)
                 .secretaria(secretaria)
                 .empenho(empenho)
-                .localInstalacao(dto.getLocalInstalacao())
-                .endereco(dto.getEndereco())
-                .responsavel(dto.getResponsavel())
+                .localInstalacao(localNome != null ? localNome : "Não informado")
+                .endereco(endereco)
+                .responsavel(responsavel)
                 .transformador(dto.getTransformador())
                 .dataInstalacao(dto.getDataInstalacao() != null ? dto.getDataInstalacao() : LocalDate.now())
                 .contadorInstalacaoMono(dto.getContadorInicialMono() != null ? dto.getContadorInicialMono() : 0)
@@ -148,17 +162,42 @@ public class ImpressoraService {
         instalacaoAtual.setStatus("REMANEJADA");
         instalacaoRepository.save(instalacaoAtual);
 
-        // 2. Cria a nova instalação
-        Secretaria novaSecretaria = secretariaRepository.findById(dto.getNovaSecretariaId())
-                .orElseThrow(() -> new EntityNotFoundException("Secretaria", dto.getNovaSecretariaId()));
+        // 2. Resolve a nova Secretaria, Local e Endereço
+        Secretaria novaSecretaria = null;
+        String novoLocalNome = dto.getNovoLocalInstalacao();
+        String novoEndereco = dto.getNovoEndereco();
+        String novoResponsavel = dto.getNovoResponsavel();
+
+        if (dto.getLocalInstalacaoId() != null) {
+            LocalInstalacao local = localRepository.findById(dto.getLocalInstalacaoId()).orElse(null);
+            if (local != null) {
+                novaSecretaria = local.getSecretaria();
+                if (novoLocalNome == null || novoLocalNome.isBlank()) novoLocalNome = local.getNome();
+                if (novoEndereco == null || novoEndereco.isBlank()) novoEndereco = local.getEndereco();
+                if (novoResponsavel == null || novoResponsavel.isBlank()) novoResponsavel = local.getResponsavel();
+            }
+        }
+
+        if (novaSecretaria == null && dto.getNovaSecretariaId() != null) {
+            novaSecretaria = secretariaRepository.findById(dto.getNovaSecretariaId())
+                    .orElseThrow(() -> new EntityNotFoundException("Secretaria", dto.getNovaSecretariaId()));
+        }
+
+        if (novaSecretaria == null) {
+            novaSecretaria = instalacaoAtual.getSecretaria();
+        }
+
+        // Se mudou de secretaria, vincula ao empenho ativo da nova secretaria
+        EmpenhoImpressao novoEmpenho = empenhoRepository.findBySecretariaIdAndAtivoTrue(novaSecretaria.getId())
+                .stream().findFirst().orElse(instalacaoAtual.getEmpenho());
 
         InstalacaoImpressora novaInstalacao = InstalacaoImpressora.builder()
                 .impressora(impressora)
                 .secretaria(novaSecretaria)
-                .empenho(instalacaoAtual.getEmpenho())
-                .localInstalacao(dto.getNovoLocalInstalacao())
-                .endereco(dto.getNovoEndereco() != null ? dto.getNovoEndereco() : instalacaoAtual.getEndereco())
-                .responsavel(dto.getNovoResponsavel())
+                .empenho(novoEmpenho)
+                .localInstalacao(novoLocalNome != null ? novoLocalNome : "Não informado")
+                .endereco(novoEndereco != null ? novoEndereco : instalacaoAtual.getEndereco())
+                .responsavel(novoResponsavel != null ? novoResponsavel : instalacaoAtual.getResponsavel())
                 .transformador(dto.getNovoTransformador() != null ? dto.getNovoTransformador() : instalacaoAtual.getTransformador())
                 .dataInstalacao(dataMudanca)
                 .contadorInstalacaoMono(dto.getContadorAtualMono() != null ? dto.getContadorAtualMono() : 0)

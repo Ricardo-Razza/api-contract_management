@@ -31,7 +31,8 @@ public class ImpressoraRequestDTO {
 
     private Long empenhoId;
 
-    @NotBlank(message = "O local de instalação é obrigatório")
+    private Long localInstalacaoId;
+
     private String localInstalacao;
 
     private String endereco;
