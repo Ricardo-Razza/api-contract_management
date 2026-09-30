@@ -11,6 +11,7 @@ import java.util.Optional;
 import com.contract_management.api.common.model.Ativo;
 import com.contract_management.api.modules.contrato.model.AtaRegistroPreco;
 import com.contract_management.api.modules.contrato.model.AtaSecretaria;
+import com.contract_management.api.modules.equipe.model.EquipeContrato;
 import com.contract_management.api.modules.secretaria.model.Secretaria;
 
 @Repository
@@ -47,6 +48,25 @@ public interface AtaRepository extends JpaRepository<AtaRegistroPreco, Long> {
     List<AtaRegistroPreco> carregarSecretarias(@Param("atas") List<AtaRegistroPreco> atas);
 
     /**
+     * Carrega as equipes para a lista de ATAs fornecida.
+     */
+    @Query("SELECT DISTINCT a FROM AtaRegistroPreco a " +
+           "LEFT JOIN FETCH a.equipe eq " +
+           "LEFT JOIN FETCH eq.ativo " +
+           "WHERE a IN :atas")
+    List<AtaRegistroPreco> carregarEquipes(@Param("atas") List<AtaRegistroPreco> atas);
+
+    /**
+     * Carrega os membros, servidores e funções das equipes das ATAs fornecidas.
+     */
+    @Query("SELECT DISTINCT eq FROM EquipeContrato eq " +
+           "LEFT JOIN FETCH eq.membros m " +
+           "LEFT JOIN FETCH m.servidor " +
+           "LEFT JOIN FETCH m.funcao " +
+           "WHERE eq.ata IN :atas")
+    List<EquipeContrato> carregarMembrosEquipes(@Param("atas") List<AtaRegistroPreco> atas);
+
+    /**
      * Carrega uma ATA por ID com todas as secretarias e dados relacionados (JOIN FETCH completo).
      */
     @Query("SELECT a FROM AtaRegistroPreco a " +
@@ -57,4 +77,23 @@ public interface AtaRepository extends JpaRepository<AtaRegistroPreco, Long> {
            "LEFT JOIN FETCH s.ativo " +
            "WHERE a.id = :id")
     Optional<AtaRegistroPreco> findComSecretariasById(@Param("id") Long id);
+
+    /**
+     * Carrega as equipes para uma ATA específica por ID.
+     */
+    @Query("SELECT DISTINCT a FROM AtaRegistroPreco a " +
+           "LEFT JOIN FETCH a.equipe eq " +
+           "LEFT JOIN FETCH eq.ativo " +
+           "WHERE a.id = :id")
+    Optional<AtaRegistroPreco> findComEquipeById(@Param("id") Long id);
+
+    /**
+     * Carrega os membros, servidores e funções das equipes de uma ATA específica por ID.
+     */
+    @Query("SELECT DISTINCT eq FROM EquipeContrato eq " +
+           "LEFT JOIN FETCH eq.membros m " +
+           "LEFT JOIN FETCH m.servidor " +
+           "LEFT JOIN FETCH m.funcao " +
+           "WHERE eq.ata.id = :id")
+    List<EquipeContrato> carregarMembrosEquipePorAtaId(@Param("id") Long id);
 }

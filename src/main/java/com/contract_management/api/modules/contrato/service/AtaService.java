@@ -23,13 +23,19 @@ import com.contract_management.api.modules.contrato.model.Tipo;
 import com.contract_management.api.modules.contrato.repository.AtaRepository;
 import com.contract_management.api.modules.contrato.repository.AtaSecretariaRepository;
 import com.contract_management.api.modules.contrato.repository.TipoRepository;
+import com.contract_management.api.modules.equipe.dto.request.MembroEquipeRequestDTO;
 import com.contract_management.api.modules.equipe.dto.response.EquipeContratoResponseDTO;
 import com.contract_management.api.modules.equipe.dto.response.MembroEquipeResponseDTO;
 import com.contract_management.api.modules.equipe.model.EquipeContrato;
 import com.contract_management.api.modules.equipe.model.EquipeMembro;
+import com.contract_management.api.modules.equipe.model.FuncaoEquipe;
+import com.contract_management.api.modules.equipe.repository.EquipeContratoRepository;
+import com.contract_management.api.modules.equipe.repository.FuncaoEquipeRepository;
 import com.contract_management.api.modules.secretaria.dto.response.SecretariaResponseDTO;
 import com.contract_management.api.modules.secretaria.model.Secretaria;
 import com.contract_management.api.modules.secretaria.repository.SecretariaRepository;
+import com.contract_management.api.modules.servidor.model.Servidor;
+import com.contract_management.api.modules.servidor.repository.ServidorRepository;
 
 @Service
 @RequiredArgsConstructor
@@ -41,13 +47,20 @@ public class AtaService {
     private final TipoRepository tipoRepository;
     private final AtivoRepository ativoRepository;
     private final SecretariaRepository secretariaRepository;
+    private final EquipeContratoRepository equipeContratoRepository;
+    private final ServidorRepository servidorRepository;
+    private final FuncaoEquipeRepository funcaoEquipeRepository;
 
     @Transactional(readOnly = true)
     public List<AtaResponseDTO> listarTodos() {
         List<AtaRegistroPreco> atas = ataRepository.findAllComSecretarias();
-        log.debug("=== DEBUG: {} ATAs carregadas do banco ===", atas.size());
-        atas.forEach(a -> log.debug("ATA id={} numero={}/{} tem {} secretaria(s)",
-                a.getId(), a.getNumero(), a.getAno(), a.getSecretarias().size()));
+        if (!atas.isEmpty()) {
+            ataRepository.carregarEquipes(atas);
+            boolean temEquipes = atas.stream().anyMatch(a -> a.getEquipe() != null && !a.getEquipe().isEmpty());
+            if (temEquipes) {
+                ataRepository.carregarMembrosEquipes(atas);
+            }
+        }
         return atas.stream()
                 .map(this::toResponseDTO)
                 .collect(Collectors.toList());
@@ -57,7 +70,13 @@ public class AtaService {
     public Page<AtaResponseDTO> listarPaginado(Pageable pageable) {
         Page<AtaRegistroPreco> pagina = ataRepository.findAll(pageable);
         if (pagina.hasContent()) {
-            ataRepository.carregarSecretarias(pagina.getContent());
+            List<AtaRegistroPreco> atas = pagina.getContent();
+            ataRepository.carregarSecretarias(atas);
+            ataRepository.carregarEquipes(atas);
+            boolean temEquipes = atas.stream().anyMatch(a -> a.getEquipe() != null && !a.getEquipe().isEmpty());
+            if (temEquipes) {
+                ataRepository.carregarMembrosEquipes(atas);
+            }
         }
         return pagina.map(this::toResponseDTO);
     }
@@ -66,6 +85,10 @@ public class AtaService {
     public AtaResponseDTO buscarPorId(Long id) {
         AtaRegistroPreco ata = ataRepository.findComSecretariasById(id)
                 .orElseThrow(() -> new EntityNotFoundException("ATA", id));
+        ataRepository.findComEquipeById(id);
+        if (ata.getEquipe() != null && !ata.getEquipe().isEmpty()) {
+            ataRepository.carregarMembrosEquipePorAtaId(id);
+        }
         return toResponseDTO(ata);
     }
 
@@ -120,11 +143,10 @@ public class AtaService {
             }
         }
 
-        // Recarrega do banco para que as secretarias recém salvas sejam incluídas no DTO
-        AtaRegistroPreco reloaded = ataRepository.findComSecretariasById(saved.getId())
-                .orElse(saved);
+        salvarOuAtualizarEquipe(saved, dto.getMembros(), ativo);
+
         log.info("ATA criada com sucesso. ID: {}, Número: {}/{}", saved.getId(), saved.getNumero(), saved.getAno());
-        return toResponseDTO(reloaded);
+        return buscarPorId(saved.getId());
     }
 
     @Transactional
@@ -187,12 +209,67 @@ public class AtaService {
             }
         }
 
+        salvarOuAtualizarEquipe(ata, dto.getMembros(), ativo);
+
         AtaRegistroPreco updated = savedOrUpdated(ata);
-        // Recarrega do banco para que as secretarias recém salvas sejam incluídas no DTO
-        AtaRegistroPreco reloaded = ataRepository.findComSecretariasById(updated.getId())
-                .orElse(updated);
         log.info("ATA atualizada com sucesso. ID: {}, Número: {}/{}", ata.getId(), ata.getNumero(), ata.getAno());
-        return toResponseDTO(reloaded);
+        return buscarPorId(updated.getId());
+    }
+
+    private void salvarOuAtualizarEquipe(AtaRegistroPreco ata, List<MembroEquipeRequestDTO> membrosDTO, Ativo ativo) {
+        if (membrosDTO == null) {
+            return;
+        }
+        List<EquipeContrato> equipesExistentes = equipeContratoRepository.findByAtaId(ata.getId());
+        if (membrosDTO.isEmpty()) {
+            if (!equipesExistentes.isEmpty()) {
+                equipeContratoRepository.deleteAll(equipesExistentes);
+                equipeContratoRepository.flush();
+                if (ata.getEquipe() != null) {
+                    ata.getEquipe().clear();
+                }
+            }
+            return;
+        }
+
+        EquipeContrato equipe;
+        if (!equipesExistentes.isEmpty()) {
+            equipe = equipesExistentes.get(0);
+            equipe.setAtivo(ativo);
+            if (equipe.getMembros() == null) {
+                equipe.setMembros(new ArrayList<>());
+            } else {
+                equipe.getMembros().clear();
+            }
+        } else {
+            equipe = EquipeContrato.builder()
+                    .ata(ata)
+                    .ativo(ativo)
+                    .membros(new ArrayList<>())
+                    .build();
+        }
+
+        for (MembroEquipeRequestDTO mDto : membrosDTO) {
+            Servidor servidor = servidorRepository.findById(mDto.getServidorId())
+                    .orElseThrow(() -> new EntityNotFoundException("Servidor", mDto.getServidorId()));
+            FuncaoEquipe funcao = funcaoEquipeRepository.findById(mDto.getFuncaoId())
+                    .orElseThrow(() -> new EntityNotFoundException("Função", mDto.getFuncaoId()));
+
+            EquipeMembro membro = EquipeMembro.builder()
+                    .equipe(equipe)
+                    .servidor(servidor)
+                    .funcao(funcao)
+                    .build();
+
+            equipe.getMembros().add(membro);
+        }
+
+        EquipeContrato equipeSalva = equipeContratoRepository.save(equipe);
+        if (ata.getEquipe() == null) {
+            ata.setEquipe(new ArrayList<>());
+        }
+        ata.getEquipe().clear();
+        ata.getEquipe().add(equipeSalva);
     }
 
     @Transactional

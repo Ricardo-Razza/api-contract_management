@@ -23,13 +23,19 @@ import com.contract_management.api.modules.contrato.model.Tipo;
 import com.contract_management.api.modules.contrato.repository.ContratoRepository;
 import com.contract_management.api.modules.contrato.repository.ContratoSecretariaRepository;
 import com.contract_management.api.modules.contrato.repository.TipoRepository;
+import com.contract_management.api.modules.equipe.dto.request.MembroEquipeRequestDTO;
 import com.contract_management.api.modules.equipe.dto.response.EquipeContratoResponseDTO;
 import com.contract_management.api.modules.equipe.dto.response.MembroEquipeResponseDTO;
 import com.contract_management.api.modules.equipe.model.EquipeContrato;
 import com.contract_management.api.modules.equipe.model.EquipeMembro;
+import com.contract_management.api.modules.equipe.model.FuncaoEquipe;
+import com.contract_management.api.modules.equipe.repository.EquipeContratoRepository;
+import com.contract_management.api.modules.equipe.repository.FuncaoEquipeRepository;
 import com.contract_management.api.modules.secretaria.dto.response.SecretariaResponseDTO;
 import com.contract_management.api.modules.secretaria.model.Secretaria;
 import com.contract_management.api.modules.secretaria.repository.SecretariaRepository;
+import com.contract_management.api.modules.servidor.model.Servidor;
+import com.contract_management.api.modules.servidor.repository.ServidorRepository;
 
 @Service
 @RequiredArgsConstructor
@@ -41,6 +47,9 @@ public class ContratoService {
     private final TipoRepository tipoRepository;
     private final AtivoRepository ativoRepository;
     private final SecretariaRepository secretariaRepository;
+    private final EquipeContratoRepository equipeContratoRepository;
+    private final ServidorRepository servidorRepository;
+    private final FuncaoEquipeRepository funcaoEquipeRepository;
 
     @Transactional(readOnly = true)
     public List<ContratoResponseDTO> listarTodos() {
@@ -113,6 +122,7 @@ public class ContratoService {
 
         Contrato saved = contratoRepository.save(contrato);
         vincularSecretarias(saved, dto.getSecretariasIds(), ativo);
+        salvarOuAtualizarEquipe(saved, dto.getMembros(), ativo);
 
         log.info("Contrato criado com sucesso. ID: {}, Número: {}/{}", saved.getId(), saved.getNumero(), saved.getAno());
         return toResponseDTO(saved);
@@ -156,6 +166,7 @@ public class ContratoService {
         }
 
         vincularSecretarias(contrato, dto.getSecretariasIds(), ativo);
+        salvarOuAtualizarEquipe(contrato, dto.getMembros(), ativo);
 
         Contrato atualizado = contratoRepository.save(contrato);
         log.info("Contrato atualizado com sucesso. ID: {}, Número: {}/{}", atualizado.getId(), atualizado.getNumero(), atualizado.getAno());
@@ -170,6 +181,62 @@ public class ContratoService {
         contratoSecretariaRepository.deleteByContratoId(id);
         contratoRepository.deleteById(id);
         log.info("Contrato deletado com sucesso. ID: {}", id);
+    }
+
+    private void salvarOuAtualizarEquipe(Contrato contrato, List<MembroEquipeRequestDTO> membrosDTO, Ativo ativo) {
+        if (membrosDTO == null) {
+            return;
+        }
+        List<EquipeContrato> equipesExistentes = equipeContratoRepository.findByContratoId(contrato.getId());
+        if (membrosDTO.isEmpty()) {
+            if (!equipesExistentes.isEmpty()) {
+                equipeContratoRepository.deleteAll(equipesExistentes);
+                equipeContratoRepository.flush();
+                if (contrato.getEquipe() != null) {
+                    contrato.getEquipe().clear();
+                }
+            }
+            return;
+        }
+
+        EquipeContrato equipe;
+        if (!equipesExistentes.isEmpty()) {
+            equipe = equipesExistentes.get(0);
+            equipe.setAtivo(ativo);
+            if (equipe.getMembros() == null) {
+                equipe.setMembros(new ArrayList<>());
+            } else {
+                equipe.getMembros().clear();
+            }
+        } else {
+            equipe = EquipeContrato.builder()
+                    .contrato(contrato)
+                    .ativo(ativo)
+                    .membros(new ArrayList<>())
+                    .build();
+        }
+
+        for (MembroEquipeRequestDTO mDto : membrosDTO) {
+            Servidor servidor = servidorRepository.findById(mDto.getServidorId())
+                    .orElseThrow(() -> new EntityNotFoundException("Servidor", mDto.getServidorId()));
+            FuncaoEquipe funcao = funcaoEquipeRepository.findById(mDto.getFuncaoId())
+                    .orElseThrow(() -> new EntityNotFoundException("Função", mDto.getFuncaoId()));
+
+            EquipeMembro membro = EquipeMembro.builder()
+                    .equipe(equipe)
+                    .servidor(servidor)
+                    .funcao(funcao)
+                    .build();
+
+            equipe.getMembros().add(membro);
+        }
+
+        EquipeContrato equipeSalva = equipeContratoRepository.save(equipe);
+        if (contrato.getEquipe() == null) {
+            contrato.setEquipe(new ArrayList<>());
+        }
+        contrato.getEquipe().clear();
+        contrato.getEquipe().add(equipeSalva);
     }
 
     private void vincularSecretarias(Contrato contrato, List<Long> secretariasIds, Ativo ativo) {

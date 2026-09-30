@@ -8,6 +8,8 @@ import java.time.LocalDate;
 import java.util.List;
 
 import com.contract_management.api.modules.contrato.model.Tipo;
+import com.contract_management.api.modules.equipe.dto.request.MembroEquipeRequestDTO;
+import jakarta.validation.Valid;
 
 @Data
 public class ContratoRequestDTO {
@@ -47,4 +49,6 @@ public class ContratoRequestDTO {
     private List<Long> secretariasIds;
 
     private String observacao;
+
+    private List<@Valid MembroEquipeRequestDTO> membros;
 }

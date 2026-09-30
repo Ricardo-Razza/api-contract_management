@@ -30,8 +30,15 @@ import com.contract_management.api.modules.contrato.model.Tipo;
 import com.contract_management.api.modules.contrato.repository.ContratoRepository;
 import com.contract_management.api.modules.contrato.repository.ContratoSecretariaRepository;
 import com.contract_management.api.modules.contrato.repository.TipoRepository;
+import com.contract_management.api.modules.equipe.dto.request.MembroEquipeRequestDTO;
+import com.contract_management.api.modules.equipe.model.EquipeContrato;
+import com.contract_management.api.modules.equipe.model.FuncaoEquipe;
+import com.contract_management.api.modules.equipe.repository.EquipeContratoRepository;
+import com.contract_management.api.modules.equipe.repository.FuncaoEquipeRepository;
 import com.contract_management.api.modules.secretaria.model.Secretaria;
 import com.contract_management.api.modules.secretaria.repository.SecretariaRepository;
+import com.contract_management.api.modules.servidor.model.Servidor;
+import com.contract_management.api.modules.servidor.repository.ServidorRepository;
 
 @ExtendWith(MockitoExtension.class)
 class ContratoServiceTest {
@@ -50,6 +57,15 @@ class ContratoServiceTest {
 
     @Mock
     private SecretariaRepository secretariaRepository;
+
+    @Mock
+    private EquipeContratoRepository equipeContratoRepository;
+
+    @Mock
+    private ServidorRepository servidorRepository;
+
+    @Mock
+    private FuncaoEquipeRepository funcaoEquipeRepository;
 
     @InjectMocks
     private ContratoService contratoService;
@@ -194,5 +210,55 @@ class ContratoServiceTest {
 
         assertThrows(BusinessException.class, () -> contratoService.criar(dto));
         verify(contratoRepository, never()).save(any());
+    }
+
+    @Test
+    void deveCriarContratoComEquipeMembrosDesignados() {
+        ContratoRequestDTO dto = new ContratoRequestDTO();
+        dto.setNumero(300);
+        dto.setAno(2026);
+        dto.setDataInicio(LocalDate.of(2026, 1, 1));
+        dto.setDataFim(LocalDate.of(2026, 12, 31));
+        dto.setTipoId(1L);
+        dto.setAtivoId(1L);
+        dto.setObjeto("Contrato com fiscal");
+        dto.setNomeContratado("Fornecedor XYZ");
+        dto.setPortariaDesignacao("Portaria 20");
+        dto.setDataDesignacao(LocalDate.of(2026, 1, 10));
+        dto.setSecretariasIds(List.of(1L));
+
+        MembroEquipeRequestDTO membroDto = new MembroEquipeRequestDTO(5L, 2L);
+        dto.setMembros(List.of(membroDto));
+
+        when(contratoRepository.existsByNumeroAndAno(300, 2026)).thenReturn(false);
+        when(tipoRepository.findById(1L)).thenReturn(Optional.of(tipo));
+        when(ativoRepository.findById(1L)).thenReturn(Optional.of(ativo));
+        when(secretariaRepository.findAllById(List.of(1L))).thenReturn(List.of(secretaria));
+        when(contratoRepository.save(any(Contrato.class))).thenAnswer(invocation -> {
+            Contrato c = invocation.getArgument(0);
+            c.setId(200L);
+            return c;
+        });
+
+        Servidor servidor = Servidor.builder().id(5L).nome("Carlos").matricula(12345).build();
+        FuncaoEquipe funcao = FuncaoEquipe.builder().id(2L).nome("Fiscal Técnico").build();
+        when(servidorRepository.findById(5L)).thenReturn(Optional.of(servidor));
+        when(funcaoEquipeRepository.findById(2L)).thenReturn(Optional.of(funcao));
+        when(equipeContratoRepository.save(any(EquipeContrato.class))).thenAnswer(invocation -> {
+            EquipeContrato eq = invocation.getArgument(0);
+            eq.setId(1L);
+            return eq;
+        });
+
+        ContratoResponseDTO resultado = contratoService.criar(dto);
+
+        assertNotNull(resultado);
+        assertEquals(300, resultado.getNumero());
+        verify(equipeContratoRepository, times(1)).save(any(EquipeContrato.class));
+        assertNotNull(resultado.getEquipe());
+        assertEquals(1, resultado.getEquipe().size());
+        assertEquals(1, resultado.getEquipe().get(0).getMembros().size());
+        assertEquals("Carlos", resultado.getEquipe().get(0).getMembros().get(0).getServidorNome());
+        assertEquals("Fiscal Técnico", resultado.getEquipe().get(0).getMembros().get(0).getFuncaoNome());
     }
 }

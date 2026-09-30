@@ -8,6 +8,8 @@ import java.time.LocalDate;
 import java.util.List;
 
 import com.contract_management.api.modules.contrato.model.Tipo;
+import com.contract_management.api.modules.equipe.dto.request.MembroEquipeRequestDTO;
+import jakarta.validation.Valid;
 
 @Data
 public class AtaRequestDTO {
@@ -41,4 +43,6 @@ public class AtaRequestDTO {
     private String portariaDesignacao;
 
     private LocalDate dataDesignacao;
+
+    private List<@Valid MembroEquipeRequestDTO> membros;
 }
