@@ -1,0 +1,15 @@
+package com.contract_management.api.modules.impressora.repository;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+import java.util.List;
+import java.util.Optional;
+
+import com.contract_management.api.modules.impressora.model.EmpenhoImpressao;
+
+@Repository
+public interface EmpenhoImpressaoRepository extends JpaRepository<EmpenhoImpressao, Long> {
+    List<EmpenhoImpressao> findByAtivoTrueOrderByNumeroEmpenhoAsc();
+    List<EmpenhoImpressao> findBySecretariaIdAndAtivoTrue(Long secretariaId);
+    Optional<EmpenhoImpressao> findByNumeroEmpenhoAndAno(String numeroEmpenho, Integer ano);
+}

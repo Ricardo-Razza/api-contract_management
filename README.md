@@ -17,11 +17,7 @@ API REST para administração centralizada de contratos, atas de registro de pre
 
 - **Linguagem**: Java 21 (LTS)
 - **Framework**: Spring Boot 4.1.0
-<<<<<<< HEAD
-`- **ORM**: Hibernate / Spring Data JPA
-=======
 - **ORM**: Hibernate / Spring Data JPA
->>>>>>> 902fbb7b1f7d5c981407e0b86dc4d668803b70c9
 - **Banco de Dados**: MySQL 8.0+
 - **Build**: Maven 3.9+
 - **Documentação**: SpringDoc OpenAPI / Swagger
@@ -69,15 +65,21 @@ docker-compose up -d
 
 ```
 src/main/java/com/contract_management/api/
-├── controller/           # REST Controllers
-├── service/             # Lógica de negócio
-├── repository/          # Spring Data JPA
-├── model/               # Entidades JPA
-├── dto/                 # Data Transfer Objects
-├── scheduler/           # Tarefas agendadas
-├── exception/           # Tratamento de erros
-├── config/              # Configurações
-└── ApiApplication.java  # Entrada da aplicação
+├── common/                  # Componentes compartilhados
+│   ├── controller/          # Controllers genéricos (ex: Ativo)
+│   ├── exception/           # Tratamento global de exceções
+│   ├── model/               # Entidades compartilhadas (ex: Ativo)
+│   ├── repository/          # Repositórios compartilhados
+│   └── service/             # Serviços compartilhados
+├── config/                  # Configurações transversais (CORS, Cache)
+├── modules/                 # Módulos por Domínio de Negócio
+│   ├── contrato/            # Gestão de Contratos, Atas e Notificações de Vencimento
+│   ├── equipe/              # Gestão de Equipes e Fiscalização de Contratos
+│   ├── ferias/              # Gestão de Férias, Afastamentos e Escala Anual
+│   ├── impressora/          # Outsourcing de Impressão, Medições e Empenhos
+│   ├── secretaria/          # Secretarias e Departamentos
+│   └── servidor/            # Servidores e Recursos Humanos
+└── ApiApplication.java      # Ponto de entrada da aplicação
 ```
 
 ## 📡 API Endpoints
