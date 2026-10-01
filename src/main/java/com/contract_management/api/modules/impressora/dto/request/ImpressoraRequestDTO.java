@@ -30,6 +30,7 @@ public class ImpressoraRequestDTO {
 
     private Long empenhoId;
 
+    @NotNull(message = "Selecione um local cadastrado")
     private Long localInstalacaoId;
 
     private String localInstalacao;

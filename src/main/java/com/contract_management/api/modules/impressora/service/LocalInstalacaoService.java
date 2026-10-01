@@ -44,7 +44,22 @@ public class LocalInstalacaoService {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             """);
 
+            Integer coluna = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM information_schema.COLUMNS " +
+                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'instalacao_impressora' " +
+                    "AND COLUMN_NAME = 'local_instalacao_id'", Integer.class);
+            if (coluna != null && coluna == 0) {
+                jdbcTemplate.execute("ALTER TABLE instalacao_impressora ADD COLUMN local_instalacao_id BIGINT NULL");
+                jdbcTemplate.execute("CREATE INDEX idx_instalacao_local ON instalacao_impressora(local_instalacao_id)");
+            }
             sincronizarLocaisDasInstalacoes();
+            jdbcTemplate.update("""
+                UPDATE instalacao_impressora i
+                SET i.local_instalacao_id = (
+                    SELECT MIN(l.id) FROM local_instalacao l
+                    WHERE l.secretaria_id = i.secretaria_id
+                      AND LOWER(TRIM(l.nome)) = LOWER(TRIM(i.local_instalacao))
+                ) WHERE i.local_instalacao_id IS NULL
+            """);
             log.info("Tabela e locais de instalacao verificados com sucesso.");
         } catch (Exception e) {
             log.warn("Verificacao de tabela local_instalacao: {}", e.getMessage());
@@ -58,7 +73,8 @@ public class LocalInstalacaoService {
                 INSERT INTO `local_instalacao` (`nome`, `secretaria_id`, `endereco`, `responsavel`, `ativo`)
                 SELECT TRIM(i.local_instalacao), i.secretaria_id, MAX(i.endereco), MAX(i.responsavel), 1
                 FROM `instalacao_impressora` i
-                WHERE i.local_instalacao IS NOT NULL AND TRIM(i.local_instalacao) <> ''
+                WHERE i.local_instalacao_id IS NULL
+                  AND i.local_instalacao IS NOT NULL AND TRIM(i.local_instalacao) <> ''
                   AND NOT EXISTS (
                       SELECT 1 FROM `local_instalacao` l 
                       WHERE LOWER(TRIM(l.nome)) = LOWER(TRIM(i.local_instalacao)) 
@@ -144,8 +160,15 @@ public class LocalInstalacaoService {
         localRepository.save(local);
     }
 
+    @Transactional(readOnly = true)
+    public List<com.contract_management.api.modules.impressora.dto.response.InstalacaoHistoricoDTO> historico(Long id) {
+        if (!localRepository.existsById(id)) throw new EntityNotFoundException("Local de Instalação", id);
+        return instalacaoRepository.findHistoricoByLocalId(id).stream()
+                .map(com.contract_management.api.modules.impressora.dto.response.InstalacaoHistoricoDTO::from).toList();
+    }
+
     private LocalInstalacaoResponseDTO toResponseDTO(LocalInstalacao local) {
-        long count = instalacaoRepository.countByLocalInstalacaoIgnoreCaseAndStatus(local.getNome(), "ATIVA");
+        long count = instalacaoRepository.countByLocalInstalacaoIdAndStatus(local.getId(), "ATIVA");
 
         return LocalInstalacaoResponseDTO.builder()
                 .id(local.getId())

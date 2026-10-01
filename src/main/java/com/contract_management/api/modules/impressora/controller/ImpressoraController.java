@@ -49,6 +49,12 @@ public class ImpressoraController {
         return ResponseEntity.ok(impressoraService.buscarPorId(id));
     }
 
+    @GetMapping("/{id}/instalacoes")
+    @Operation(summary = "Lista o histórico de instala??es, incluindo passagens encerradas")
+    public ResponseEntity<List<com.contract_management.api.modules.impressora.dto.response.InstalacaoHistoricoDTO>> historico(@PathVariable Long id) {
+        return ResponseEntity.ok(impressoraService.historico(id));
+    }
+
     @PostMapping
     @Operation(summary = "Cadastra uma nova impressora com sua alocação/instalação inicial")
     public ResponseEntity<ImpressoraResponseDTO> criar(@Valid @RequestBody ImpressoraRequestDTO dto) {

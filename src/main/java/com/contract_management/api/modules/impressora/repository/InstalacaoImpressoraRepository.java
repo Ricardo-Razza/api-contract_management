@@ -26,7 +26,15 @@ public interface InstalacaoImpressoraRepository extends JpaRepository<Instalacao
            "WHERE inst.status = 'ATIVA' ORDER BY imp.itemPedido ASC")
     List<InstalacaoImpressora> findAllAtivasWithDetails();
 
-    List<InstalacaoImpressora> findByImpressoraIdOrderByDataInstalacaoDesc(Long impressoraId);
+    @Query("SELECT i FROM InstalacaoImpressora i JOIN FETCH i.impressora JOIN FETCH i.secretaria " +
+           "WHERE i.impressora.id = :impressoraId ORDER BY i.dataInstalacao DESC, i.id DESC")
+    List<InstalacaoImpressora> findByImpressoraIdOrderByDataInstalacaoDesc(@Param("impressoraId") Long impressoraId);
+
+    @Query("SELECT i FROM InstalacaoImpressora i JOIN FETCH i.impressora JOIN FETCH i.secretaria " +
+           "WHERE i.localInstalacaoId = :localId ORDER BY i.dataInstalacao DESC, i.id DESC")
+    List<InstalacaoImpressora> findHistoricoByLocalId(@Param("localId") Long localId);
+
+    long countByLocalInstalacaoIdAndStatus(Long localInstalacaoId, String status);
 
     long countByEmpenhoIdAndStatus(Long empenhoId, String status);
 

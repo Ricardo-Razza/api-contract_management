@@ -12,6 +12,7 @@ import java.time.LocalDate;
 @Builder
 public class TrocaLocalRequestDTO {
 
+    @NotNull(message = "Selecione um local cadastrado")
     private Long localInstalacaoId;
 
     @NotNull(message = "A nova secretaria é obrigatória")

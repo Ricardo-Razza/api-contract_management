@@ -33,6 +33,12 @@ public class LocalInstalacaoController {
         return ResponseEntity.ok(localService.buscarPorId(id));
     }
 
+    @GetMapping("/{id}/instalacoes")
+    @Operation(summary = "Lista o histórico de instala??es, incluindo passagens encerradas")
+    public ResponseEntity<List<com.contract_management.api.modules.impressora.dto.response.InstalacaoHistoricoDTO>> historico(@PathVariable Long id) {
+        return ResponseEntity.ok(localService.historico(id));
+    }
+
     @PostMapping
     @Operation(summary = "Cadastra um novo local de instalação")
     public ResponseEntity<LocalInstalacaoResponseDTO> criar(@Valid @RequestBody LocalInstalacaoRequestDTO dto) {

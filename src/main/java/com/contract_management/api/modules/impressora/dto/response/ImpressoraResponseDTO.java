@@ -38,6 +38,7 @@ public class ImpressoraResponseDTO {
     private Long empenhoId;
     private String numeroEmpenho;
     private String localInstalacao;
+    private Long localInstalacaoId;
     private String endereco;
     private String responsavel;
     private String transformador;

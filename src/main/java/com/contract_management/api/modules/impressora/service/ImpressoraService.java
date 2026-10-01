@@ -57,8 +57,26 @@ public class ImpressoraService {
         return toResponseDTO(impressora, instalacao);
     }
 
+    @Transactional(readOnly = true)
+    public List<com.contract_management.api.modules.impressora.dto.response.InstalacaoHistoricoDTO> historico(Long id) {
+        if (!impressoraRepository.existsById(id)) throw new EntityNotFoundException("Impressora", id);
+        return instalacaoRepository.findByImpressoraIdOrderByDataInstalacaoDesc(id).stream()
+                .map(com.contract_management.api.modules.impressora.dto.response.InstalacaoHistoricoDTO::from).toList();
+    }
+
+    private LocalInstalacao validarLocal(Long id, Long secretariaId) {
+        if (id == null) throw new com.contract_management.api.common.exception.BusinessException("Selecione um local cadastrado.");
+        LocalInstalacao local = localRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Local de Instalação", id));
+        if (!Boolean.TRUE.equals(local.getAtivo()) || !local.getSecretaria().getId().equals(secretariaId)) {
+            throw new com.contract_management.api.common.exception.BusinessException("O local deve estar ativo e pertencer à secretaria selecionada.");
+        }
+        return local;
+    }
+
     @Transactional
     public ImpressoraResponseDTO criar(ImpressoraRequestDTO dto) {
+        LocalInstalacao localSelecionado = validarLocal(dto.getLocalInstalacaoId(), dto.getSecretariaId());
         LoteImpressao lote = null;
         if (dto.getLoteId() != null) {
             lote = loteRepository.findById(dto.getLoteId()).orElse(null);
@@ -85,7 +103,7 @@ public class ImpressoraService {
 
         Impressora salva = impressoraRepository.save(impressora);
 
-        String localNome = dto.getLocalInstalacao();
+        String localNome = localSelecionado.getNome();
         String endereco = dto.getEndereco();
         String responsavel = dto.getResponsavel();
 
@@ -102,7 +120,8 @@ public class ImpressoraService {
                 .impressora(salva)
                 .secretaria(secretaria)
                 .empenho(empenho)
-                .localInstalacao(localNome != null ? localNome : "Não informado")
+                .localInstalacao(localNome)
+                .localInstalacaoId(localSelecionado.getId())
                 .endereco(endereco)
                 .responsavel(responsavel)
                 .transformador(dto.getTransformador())
@@ -119,6 +138,7 @@ public class ImpressoraService {
 
     @Transactional
     public ImpressoraResponseDTO atualizar(Long id, ImpressoraRequestDTO dto) {
+        LocalInstalacao localSelecionado = validarLocal(dto.getLocalInstalacaoId(), dto.getSecretariaId());
         Impressora impressora = impressoraRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Impressora", id));
 
@@ -138,6 +158,9 @@ public class ImpressoraService {
 
         InstalacaoImpressora instalacao = instalacaoRepository.findAtivaByImpressoraId(id).orElse(null);
         if (instalacao != null) {
+            if (!localSelecionado.getId().equals(instalacao.getLocalInstalacaoId())) {
+                throw new com.contract_management.api.common.exception.BusinessException("Use o remanejamento para alterar o local e preservar o histórico.");
+            }
             if (dto.getSecretariaId() != null && !dto.getSecretariaId().equals(instalacao.getSecretaria().getId())) {
                 Secretaria sec = secretariaRepository.findById(dto.getSecretariaId()).orElse(null);
                 if (sec != null) instalacao.setSecretaria(sec);
@@ -146,7 +169,7 @@ public class ImpressoraService {
                 EmpenhoImpressao emp = empenhoRepository.findById(dto.getEmpenhoId()).orElse(null);
                 instalacao.setEmpenho(emp);
             }
-            instalacao.setLocalInstalacao(dto.getLocalInstalacao());
+            instalacao.setLocalInstalacao(localSelecionado.getNome());
             instalacao.setEndereco(dto.getEndereco());
             instalacao.setResponsavel(dto.getResponsavel());
             instalacao.setTransformador(dto.getTransformador());
@@ -158,6 +181,7 @@ public class ImpressoraService {
 
     @Transactional
     public ImpressoraResponseDTO remanejarLocal(Long id, TrocaLocalRequestDTO dto) {
+        LocalInstalacao localSelecionado = validarLocal(dto.getLocalInstalacaoId(), dto.getNovaSecretariaId());
         Impressora impressora = impressoraRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Impressora", id));
 
@@ -165,6 +189,13 @@ public class ImpressoraService {
                 .orElseThrow(() -> new IllegalStateException("Impressora não possui instalação ativa"));
 
         LocalDate dataMudanca = dto.getDataMudanca() != null ? dto.getDataMudanca() : LocalDate.now();
+
+        if (dataMudanca.isBefore(instalacaoAtual.getDataInstalacao())) {
+            throw new com.contract_management.api.common.exception.BusinessException("A mudança não pode ser anterior à instalação atual.");
+        }
+        if (localSelecionado.getId().equals(instalacaoAtual.getLocalInstalacaoId())) {
+            throw new com.contract_management.api.common.exception.BusinessException("Selecione um local diferente do atual.");
+        }
 
         // 1. Encerra a instalação antiga
         instalacaoAtual.setDataRetirada(dataMudanca);
@@ -176,7 +207,7 @@ public class ImpressoraService {
 
         // 2. Resolve a nova Secretaria, Local e Endereço
         Secretaria novaSecretaria = null;
-        String novoLocalNome = dto.getNovoLocalInstalacao();
+        String novoLocalNome = localSelecionado.getNome();
         String novoEndereco = dto.getNovoEndereco();
         String novoResponsavel = dto.getNovoResponsavel();
 
@@ -207,7 +238,8 @@ public class ImpressoraService {
                 .impressora(impressora)
                 .secretaria(novaSecretaria)
                 .empenho(novoEmpenho)
-                .localInstalacao(novoLocalNome != null ? novoLocalNome : "Não informado")
+                .localInstalacao(novoLocalNome)
+                .localInstalacaoId(localSelecionado.getId())
                 .endereco(novoEndereco != null ? novoEndereco : instalacaoAtual.getEndereco())
                 .responsavel(novoResponsavel != null ? novoResponsavel : instalacaoAtual.getResponsavel())
                 .transformador(dto.getNovoTransformador() != null ? dto.getNovoTransformador() : instalacaoAtual.getTransformador())
@@ -320,6 +352,7 @@ public class ImpressoraService {
                 .secretaria(instalacaoAtual.getSecretaria())
                 .empenho(instalacaoAtual.getEmpenho())
                 .localInstalacao(instalacaoAtual.getLocalInstalacao())
+                .localInstalacaoId(instalacaoAtual.getLocalInstalacaoId())
                 .endereco(instalacaoAtual.getEndereco())
                 .responsavel(instalacaoAtual.getResponsavel())
                 .transformador(instalacaoAtual.getTransformador())
@@ -378,6 +411,7 @@ public class ImpressoraService {
         if (inst != null) {
             builder.instalacaoId(inst.getId())
                     .localInstalacao(inst.getLocalInstalacao())
+                    .localInstalacaoId(inst.getLocalInstalacaoId())
                     .endereco(inst.getEndereco())
                     .responsavel(inst.getResponsavel())
                     .transformador(inst.getTransformador())

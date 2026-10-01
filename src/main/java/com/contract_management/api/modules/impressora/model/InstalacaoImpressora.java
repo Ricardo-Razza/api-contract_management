@@ -34,6 +34,9 @@ public class InstalacaoImpressora {
     @Column(name = "local_instalacao", nullable = false)
     private String localInstalacao;
 
+    @Column(name = "local_instalacao_id")
+    private Long localInstalacaoId;
+
     @Column(name = "endereco")
     private String endereco;
 
