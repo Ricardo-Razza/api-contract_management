@@ -65,4 +65,20 @@ public interface LeituraContadorRepository extends JpaRepository<LeituraContador
             @Param("mes") Integer mes,
             @Param("ano") Integer ano,
             @Param("impressoraId") Long impressoraId);
+
+    @Query("SELECT l FROM LeituraContador l " +
+           "WHERE l.impressora.id = :impressoraId " +
+           "AND (l.anoReferencia < :ano OR (l.anoReferencia = :ano AND l.mesReferencia < :mes)) " +
+           "ORDER BY l.anoReferencia DESC, l.mesReferencia DESC")
+    List<LeituraContador> findLeiturasAnteriores(
+            @Param("impressoraId") Long impressoraId,
+            @Param("mes") Integer mes,
+            @Param("ano") Integer ano);
+
+    @Query("SELECT l FROM LeituraContador l " +
+           "WHERE (l.anoReferencia < :ano OR (l.anoReferencia = :ano AND l.mesReferencia < :mes)) " +
+           "ORDER BY l.anoReferencia DESC, l.mesReferencia DESC")
+    List<LeituraContador> findAllLeiturasAnteriores(
+            @Param("mes") Integer mes,
+            @Param("ano") Integer ano);
 }

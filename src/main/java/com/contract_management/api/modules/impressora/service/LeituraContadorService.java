@@ -5,11 +5,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import com.contract_management.api.common.exception.EntityNotFoundException;
 import com.contract_management.api.modules.impressora.dto.request.LeituraContadorRequestDTO;
+import com.contract_management.api.modules.impressora.dto.response.ItemGradeLeituraDTO;
 import com.contract_management.api.modules.impressora.dto.response.LeituraContadorResponseDTO;
 import com.contract_management.api.modules.impressora.model.Impressora;
 import com.contract_management.api.modules.impressora.model.InstalacaoImpressora;
@@ -41,6 +45,106 @@ public class LeituraContadorService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
+    public List<ItemGradeLeituraDTO> obterGradeLeituras(Integer mes, Integer ano) {
+        List<InstalacaoImpressora> instalacoes = instalacaoRepository.findAllAtivasWithDetails();
+        List<LeituraContador> leiturasMes = leituraRepository.findByMesAndAnoWithDetails(mes, ano);
+        List<LeituraContador> todasAnteriores = leituraRepository.findAllLeiturasAnteriores(mes, ano);
+
+        Map<Long, LeituraContador> leituraAtualMap = leiturasMes.stream()
+                .filter(l -> l.getImpressora() != null)
+                .collect(Collectors.toMap(l -> l.getImpressora().getId(), l -> l, (a, b) -> a));
+
+        Map<Long, List<LeituraContador>> anterioresMap = todasAnteriores.stream()
+                .filter(l -> l.getImpressora() != null)
+                .collect(Collectors.groupingBy(l -> l.getImpressora().getId()));
+
+        LocalDate hoje = LocalDate.now();
+
+        return instalacoes.stream()
+                .map(inst -> {
+                    Impressora imp = inst.getImpressora();
+                    LoteImpressao lote = imp.getLote();
+                    LeituraContador atual = leituraAtualMap.get(imp.getId());
+
+                    int franquiaMono = lote != null ? lote.getFranquiaMono() : 0;
+                    int franquiaColor = lote != null ? lote.getFranquiaColor() : 0;
+                    BigDecimal valorLocacao = lote != null ? lote.getValorLocacaoMensal() : BigDecimal.ZERO;
+
+                    ItemGradeLeituraDTO.ItemGradeLeituraDTOBuilder builder = ItemGradeLeituraDTO.builder()
+                            .impressoraId(imp.getId())
+                            .itemPedido(imp.getItemPedido())
+                            .fabricante(imp.getFabricante())
+                            .modelo(imp.getModelo())
+                            .tipoImpressao(imp.getTipoImpressao() != null ? imp.getTipoImpressao() : "MONO")
+                            .ip(imp.getIp())
+                            .secretariaId(inst.getSecretaria() != null ? inst.getSecretaria().getId() : null)
+                            .secretariaSigla(inst.getSecretaria() != null ? inst.getSecretaria().getSigla() : "")
+                            .secretariaNome(inst.getSecretaria() != null ? inst.getSecretaria().getNome() : "")
+                            .localInstalacao(inst.getLocalInstalacao())
+                            .numeroLote(lote != null ? lote.getNumeroLote() : null)
+                            .franquiaMono(franquiaMono)
+                            .franquiaColor(franquiaColor);
+
+                    if (atual != null) {
+                        builder.leituraId(atual.getId())
+                                .dataLeitura(atual.getDataLeitura())
+                                .leituraMonoAnterior(atual.getLeituraMonoAnterior())
+                                .leituraMonoAtual(atual.getLeituraMonoAtual())
+                                .copiasMono(atual.getCopiasMono())
+                                .leituraColorAnterior(atual.getLeituraColorAnterior())
+                                .leituraColorAtual(atual.getLeituraColorAtual())
+                                .copiasColor(atual.getCopiasColor())
+                                .excedenteMono(atual.getExcedenteMono())
+                                .excedenteColor(atual.getExcedenteColor())
+                                .valorLocacao(atual.getValorLocacao())
+                                .valorTotal(atual.getValorTotal())
+                                .origemLeitura(atual.getOrigemLeitura())
+                                .status("SALVO")
+                                .observacoes(atual.getObservacoes());
+                    } else {
+                        List<LeituraContador> anteriores = anterioresMap.get(imp.getId());
+                        int antMono = 0;
+                        int antColor = 0;
+                        if (anteriores != null && !anteriores.isEmpty()) {
+                            antMono = anteriores.get(0).getLeituraMonoAtual();
+                            antColor = anteriores.get(0).getLeituraColorAtual();
+                        } else {
+                            antMono = inst.getContadorInstalacaoMono() != null ? inst.getContadorInstalacaoMono() : 0;
+                            antColor = inst.getContadorInstalacaoColor() != null ? inst.getContadorInstalacaoColor() : 0;
+                        }
+
+                        builder.leituraId(null)
+                                .dataLeitura(hoje)
+                                .leituraMonoAnterior(antMono)
+                                .leituraMonoAtual(null)
+                                .copiasMono(0)
+                                .leituraColorAnterior(antColor)
+                                .leituraColorAtual(null)
+                                .copiasColor(0)
+                                .excedenteMono(0)
+                                .excedenteColor(0)
+                                .valorLocacao(valorLocacao)
+                                .valorTotal(valorLocacao)
+                                .origemLeitura("MANUAL")
+                                .status("PENDENTE")
+                                .observacoes(null);
+                    }
+
+                    return builder.build();
+                })
+                .sorted(Comparator.comparing(ItemGradeLeituraDTO::getItemPedido, Comparator.nullsLast(Integer::compareTo))
+                        .thenComparing(ItemGradeLeituraDTO::getImpressoraId))
+                .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public List<LeituraContadorResponseDTO> salvarEmLote(List<LeituraContadorRequestDTO> dtos) {
+        return dtos.stream()
+                .map(this::lancarLeitura)
+                .collect(Collectors.toList());
+    }
+
     @Transactional
     public LeituraContadorResponseDTO lancarLeitura(LeituraContadorRequestDTO dto) {
         Impressora impressora = impressoraRepository.findById(dto.getImpressoraId())
@@ -50,33 +154,23 @@ public class LeituraContadorService {
                 .orElse(null);
 
         // Busca leitura anterior para calcular cópias rodadas
-        List<LeituraContador> anteriores = leituraRepository.findUltimasLeiturasPorImpressora(impressora.getId());
+        List<LeituraContador> anteriores = leituraRepository.findLeiturasAnteriores(impressora.getId(), dto.getMesReferencia(), dto.getAnoReferencia());
         int leituraMonoAnterior = 0;
         int leituraColorAnterior = 0;
 
         if (!anteriores.isEmpty()) {
-            // Pega a mais recente diferente da atual se já existir
-            LeituraContador maisRecente = anteriores.get(0);
-            if (maisRecente.getMesReferencia().equals(dto.getMesReferencia()) && maisRecente.getAnoReferencia().equals(dto.getAnoReferencia())) {
-                if (anteriores.size() > 1) {
-                    leituraMonoAnterior = anteriores.get(1).getLeituraMonoAtual();
-                    leituraColorAnterior = anteriores.get(1).getLeituraColorAtual();
-                } else if (instalacao != null) {
-                    leituraMonoAnterior = instalacao.getContadorInstalacaoMono();
-                    leituraColorAnterior = instalacao.getContadorInstalacaoColor();
-                }
-            } else {
-                leituraMonoAnterior = maisRecente.getLeituraMonoAtual();
-                leituraColorAnterior = maisRecente.getLeituraColorAtual();
-            }
+            leituraMonoAnterior = anteriores.get(0).getLeituraMonoAtual();
+            leituraColorAnterior = anteriores.get(0).getLeituraColorAtual();
         } else if (instalacao != null) {
-            leituraMonoAnterior = instalacao.getContadorInstalacaoMono();
-            leituraColorAnterior = instalacao.getContadorInstalacaoColor();
+            leituraMonoAnterior = instalacao.getContadorInstalacaoMono() != null ? instalacao.getContadorInstalacaoMono() : 0;
+            leituraColorAnterior = instalacao.getContadorInstalacaoColor() != null ? instalacao.getContadorInstalacaoColor() : 0;
         }
 
-        int copiasMono = Math.max(0, dto.getLeituraMonoAtual() - leituraMonoAnterior);
-        int leituraColorAtual = dto.getLeituraColorAtual() != null ? dto.getLeituraColorAtual() : 0;
-        int copiasColor = Math.max(0, leituraColorAtual - leituraColorAnterior);
+        int monoAtual = dto.getLeituraMonoAtual() != null ? dto.getLeituraMonoAtual() : leituraMonoAnterior;
+        int copiasMono = Math.max(0, monoAtual - leituraMonoAnterior);
+
+        int colorAtual = dto.getLeituraColorAtual() != null ? dto.getLeituraColorAtual() : leituraColorAnterior;
+        int copiasColor = Math.max(0, colorAtual - leituraColorAnterior);
 
         BigDecimal proporcao = dto.getProporcao() != null ? dto.getProporcao() : BigDecimal.ONE;
 
@@ -130,10 +224,10 @@ public class LeituraContadorService {
         leitura.setInstalacao(instalacao);
         leitura.setDataLeitura(dto.getDataLeitura());
         leitura.setLeituraMonoAnterior(leituraMonoAnterior);
-        leitura.setLeituraMonoAtual(dto.getLeituraMonoAtual());
+        leitura.setLeituraMonoAtual(monoAtual);
         leitura.setCopiasMono(copiasMono);
         leitura.setLeituraColorAnterior(leituraColorAnterior);
-        leitura.setLeituraColorAtual(leituraColorAtual);
+        leitura.setLeituraColorAtual(colorAtual);
         leitura.setCopiasColor(copiasColor);
         leitura.setProporcao(proporcao);
         leitura.setFranquiaMonoAplicada(franquiaMono);

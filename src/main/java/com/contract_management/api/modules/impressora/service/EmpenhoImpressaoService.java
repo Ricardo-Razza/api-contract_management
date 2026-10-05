@@ -282,7 +282,7 @@ public class EmpenhoImpressaoService {
                     copiasColor = doMes.stream().mapToInt(LeituraContador::getCopiasColor).sum();
                     if (valor.compareTo(BigDecimal.ZERO) == 0) {
                         status = "SEM_FATURAMENTO";
-                    } else if (ano == 2026 && m >= 9) {
+                    } else if (ano == 2026 && m > 9) {
                         status = "PREVISTO";
                     } else {
                         status = "REALIZADO";
@@ -291,7 +291,7 @@ public class EmpenhoImpressaoService {
                     // Fevereiro 2026 - Instalacao inicial SMED
                     valor = new BigDecimal("765.00");
                     status = "REALIZADO";
-                } else if (ano == 2026 && m >= 9) {
+                } else if (ano == 2026 && m > 9) {
                     // Meses futuros do ano vigente: projecao com custo de locacao fixo
                     valor = locacaoMensalFixa;
                     status = "PREVISTO";
@@ -350,7 +350,7 @@ public class EmpenhoImpressaoService {
 
         List<ValorMesDTO> totaisMensais = new ArrayList<>();
         for (int m = 1; m <= 12; m++) {
-            String status = m <= 8 ? "REALIZADO" : (m >= 9 ? "PREVISTO" : "SEM_FATURAMENTO");
+            String status = m <= 9 ? "REALIZADO" : (m >= 10 ? "PREVISTO" : "SEM_FATURAMENTO");
             totaisMensais.add(ValorMesDTO.builder()
                     .mes(m)
                     .nomeMes(MESES_SIGLAS[m - 1])
