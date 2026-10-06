@@ -57,6 +57,7 @@ import com.contract_management.api.modules.impressora.repository.LeituraContador
 @Slf4j
 public class ColetorImpressoraService {
     private final PantumComprovanteService pantumComprovanteService;
+    private final ImpressoraComprovanteService impressoraComprovanteService;
     private final ControleIntervaloColetaService controleIntervaloColetaService;
 
     static {
@@ -349,9 +350,31 @@ public class ColetorImpressoraService {
         }
     }
 
-    private void executarColetaItem(ColetaContadorItem item, String chromePath) {
+    private boolean usaComprovantePadrao(String modelo) {
+        return isModeloPantum(modelo) || isSamsung(modelo) || isHp(modelo);
+    }
+
+    private void gerarComprovante(ColetaContadorItem item, Path destino) throws IOException {
+        if (isModeloPantum(item.getModelo())) pantumComprovanteService.gerar(item, destino);
+        else impressoraComprovanteService.gerar(item, destino);
+    }
+
+    void executarColetaItem(ColetaContadorItem item, String chromePath) {
         String ip = item.getIp();
         String modelo = item.getModelo() != null ? item.getModelo().toUpperCase() : "";
+
+        if (isHp(modelo) || isSamsung(modelo)) {
+            // Uma recoleta deve representar apenas os dados retornados nesta tentativa.
+            item.setContadorTotal(null);
+            item.setContadorMono(null);
+            item.setContadorColor(null);
+            item.setCopiasPrint(null);
+            item.setCopiasCopiador(null);
+            item.setCopiasScanner(null);
+            item.setNivelToner(null);
+            item.setNumeroSerie(null);
+            item.setMetodoColeta(null);
+        }
 
         // 0. Se nao possuir IP de rede valido (ex: USB, rede Andrius ou em branco), marca como manual/offline
         if (!isIpValido(ip)) {
@@ -395,30 +418,34 @@ public class ColetorImpressoraService {
             return;
         }
 
-        // 3. Coleta Híbrida - Etapa 2: Fallback Web Scraping se SNMP não capturou contador total
-        if (item.getContadorTotal() == null && !isModeloPantum(modelo)) {
+        // HP/Samsung consultam também os detalhes web quando o SNMP já retornou o total.
+        boolean webDados = false;
+        if (!isModeloPantum(modelo) && (porta80 || porta443)) {
             if (isSamsung(modelo)) {
-                extrairDadosSamsung(item);
+                webDados = extrairDadosSamsung(item) != null;
             } else if (isHp(modelo)) {
-                extrairDadosHp(item);
-            } else {
+                webDados = extrairDadosHp(item) != null;
+            } else if (item.getContadorTotal() == null) {
                 String url = resolverUrlPainel(ip, modelo, porta443, porta80);
                 extrairDadosContador(item, url);
             }
         }
 
-        // 4. Captura do PRINT ORIGINAL DO SITE DA IMPRESSORA
+        if (snmpSucesso && webDados) item.setMetodoColeta("HIBRIDO");
+        else if (webDados) item.setMetodoColeta("WEB");
+
+        // 4. Comprovante baseado nos dados coletados para Pantum, HP e Samsung.
         File arquivoDestino = new File(item.getCaminhoArquivo());
         boolean printGerado = false;
 
-        if (isModeloPantum(modelo)) {
+        if (usaComprovantePadrao(modelo)) {
             item.setDataColeta(LocalDateTime.now());
             if (item.getContadorTotal() != null) {
                 try {
-                    pantumComprovanteService.gerar(item, arquivoDestino.toPath());
+                    gerarComprovante(item, arquivoDestino.toPath());
                     printGerado = true;
                 } catch (IOException e) {
-                    log.warn("Erro ao gerar comprovante Pantum do IP {}: {}", ip, e.getMessage());
+                    log.warn("Erro ao gerar comprovante do IP {}: {}", ip, e.getMessage());
                 }
             }
         } else if (chromePath != null && (porta80 || porta443)) {
@@ -437,13 +464,11 @@ public class ColetorImpressoraService {
         }
 
         // Define método de coleta resultante
-        if (isModeloPantum(modelo) && snmpSucesso) {
-            item.setMetodoColeta("SNMP");
-        } else if (snmpSucesso && printGerado) {
+        if (!usaComprovantePadrao(modelo) && snmpSucesso && printGerado) {
             item.setMetodoColeta("HIBRIDO");
-        } else if (snmpSucesso) {
+        } else if (!usaComprovantePadrao(modelo) && snmpSucesso) {
             item.setMetodoColeta("SNMP");
-        } else if (item.getContadorTotal() != null && item.getContadorTotal() >= 0) {
+        } else if (!usaComprovantePadrao(modelo) && item.getContadorTotal() != null && item.getContadorTotal() >= 0) {
             item.setMetodoColeta("WEB");
         }
 
@@ -453,7 +478,7 @@ public class ColetorImpressoraService {
             String modo = item.getMetodoColeta() != null ? item.getMetodoColeta() : "SNMP";
             StringBuilder msg = new StringBuilder("Coletado via ").append(modo);
             if (printGerado) {
-                msg.append(isModeloPantum(modelo) ? " com comprovante SNMP gerado" : " com print original do site capturado");
+                msg.append(usaComprovantePadrao(modelo) ? " com comprovante de coleta gerado" : " com print original do site capturado");
             }
             if (item.getNivelToner() != null) {
                 msg.append(" | Toner: ").append(item.getNivelToner()).append("%");
@@ -473,7 +498,7 @@ public class ColetorImpressoraService {
             item.setMensagem("Equipamento acessado, mas contadores ou print não puderam ser extraídos.");
         }
 
-        if (!isModeloPantum(modelo)) item.setDataColeta(LocalDateTime.now());
+        if (!usaComprovantePadrao(modelo)) item.setDataColeta(LocalDateTime.now());
         itemRepository.save(item);
         atualizarProgressoParcial(item.getSessao().getId());
     }
@@ -489,7 +514,7 @@ public class ColetorImpressoraService {
         });
     }
 
-    private boolean isPortaAberta(String ip, int porta, int timeoutMs) {
+    boolean isPortaAberta(String ip, int porta, int timeoutMs) {
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress(ip, porta), timeoutMs);
             return true;
@@ -729,12 +754,8 @@ public class ColetorImpressoraService {
 
                     String serial = extrairStringRegex(json, "GXI_SYS_SERIAL_NUM\\s*:\\s*\"([^\"]+)\"", "N/D");
 
-                    item.setContadorTotal(total);
-                    item.setContadorMono(total);
-                    item.setContadorColor(0);
-                    item.setCopiasPrint(print);
-                    item.setCopiasCopiador(copy);
-                    item.setCopiasScanner(scanner);
+                    if (!ContadoresWeb.aplicarSws(item, json)) continue;
+                    if (!"N/D".equals(serial)) item.setNumeroSerie(serial);
 
                     return new SamsungDados(serial, total, print, copy, scanner,
                             simplexTotal, simplexPrint, simplexReport,
@@ -1253,12 +1274,8 @@ public class ColetorImpressoraService {
                         } catch (Exception ignored) {}
                     }
 
-                    item.setContadorTotal(total);
-                    item.setContadorMono(total);
-                    item.setContadorColor(0);
-                    item.setCopiasPrint(print);
-                    item.setCopiasCopiador(copy);
-                    item.setCopiasScanner(scanner);
+                    if (!ContadoresWeb.aplicarSws(item, json)) continue;
+                    if (!"N/D".equals(serial)) item.setNumeroSerie(serial);
 
                     return new HpDados(modelo, serial, total, print, copy, scanner,
                             simplexTotal, simplexPrint, simplexReport,
@@ -1306,12 +1323,8 @@ public class ColetorImpressoraService {
                         String modelFound = extrairStringRegex(xml, "<(?:pudyn:)?ProductModelName>([^<]+)</", null);
                         String modelo = modelFound != null ? modelFound : (item.getModelo() != null ? item.getModelo() : "HP LaserJet");
 
-                        item.setContadorTotal(total);
-                        item.setContadorMono(mono);
-                        item.setContadorColor(color);
-                        item.setCopiasPrint(print);
-                        item.setCopiasCopiador(copy);
-                        item.setCopiasScanner(scan);
+                        if (!ContadoresWeb.aplicarXml(item, xml)) continue;
+                        if (!"N/D".equals(serial)) item.setNumeroSerie(serial);
 
                         return new HpDados(modelo, serial, total, print, copy, scan,
                                 simplex, simplex, 0, duplex, duplex, 0, 0);
@@ -1800,13 +1813,13 @@ public class ColetorImpressoraService {
 
         Path caminho = Paths.get(sessao.getDiretorioPrints(), nomeArquivo);
         itemRepository.findBySessaoIdOrderByItemPedidoAsc(sessaoId).stream()
-                .filter(i -> nomeArquivo.equals(i.getNomeArquivo()) && isModeloPantum(i.getModelo()) &&
+                .filter(i -> nomeArquivo.equals(i.getNomeArquivo()) && usaComprovantePadrao(i.getModelo()) &&
                         i.getContadorTotal() != null && i.getDataColeta() != null && "SUCESSO".equals(i.getStatus()))
                 .findFirst().ifPresent(i -> {
                     try {
-                        pantumComprovanteService.gerar(i, caminho);
+                        gerarComprovante(i, caminho);
                     } catch (IOException e) {
-                        throw new RuntimeException("Erro ao gerar comprovante Pantum", e);
+                        throw new RuntimeException("Erro ao gerar comprovante de coleta", e);
                     }
                 });
         if (!Files.exists(caminho)) {
@@ -1835,8 +1848,8 @@ public class ColetorImpressoraService {
             for (ColetaContadorItem item : itens) {
                 if (item.getNomeArquivo() == null) continue;
                 File img = new File(sessao.getDiretorioPrints(), item.getNomeArquivo());
-                if (isModeloPantum(item.getModelo()) && item.getContadorTotal() != null && item.getDataColeta() != null) {
-                    pantumComprovanteService.gerar(item, img.toPath());
+                if (usaComprovantePadrao(item.getModelo()) && item.getContadorTotal() != null && item.getDataColeta() != null) {
+                    gerarComprovante(item, img.toPath());
                 }
                 if (img.exists() && img.isFile()) {
                     ZipEntry ze = new ZipEntry(item.getNomeArquivo());
