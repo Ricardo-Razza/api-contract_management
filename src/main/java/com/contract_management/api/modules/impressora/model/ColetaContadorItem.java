@@ -71,4 +71,16 @@ public class ColetaContadorItem {
 
     @Column(name = "data_coleta")
     private LocalDateTime dataColeta;
+
+    @Column(name = "data_inicio_coleta")
+    private LocalDateTime dataInicioColeta;
+
+    @Column(name = "nivel_toner")
+    private Integer nivelToner;
+
+    @Column(name = "numero_serie", length = 100)
+    private String numeroSerie;
+
+    @Column(name = "metodo_coleta", length = 30)
+    private String metodoColeta;
 }

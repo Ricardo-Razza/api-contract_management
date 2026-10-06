@@ -25,4 +25,6 @@ public class IniciarColetaRequestDTO {
     private Long empenhoId;
 
     private Long secretariaId;
+
+    private java.util.List<Long> impressoraIds;
 }

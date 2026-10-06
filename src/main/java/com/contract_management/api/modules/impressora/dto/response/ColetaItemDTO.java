@@ -29,4 +29,7 @@ public class ColetaItemDTO {
     private Integer copiasCopiador;
     private Integer copiasScanner;
     private LocalDateTime dataColeta;
+    private Integer nivelToner;
+    private String numeroSerie;
+    private String metodoColeta;
 }

@@ -56,6 +56,8 @@ import com.contract_management.api.modules.impressora.repository.LeituraContador
 @RequiredArgsConstructor
 @Slf4j
 public class ColetorImpressoraService {
+    private final PantumComprovanteService pantumComprovanteService;
+    private final ControleIntervaloColetaService controleIntervaloColetaService;
 
     static {
         // Permite acessar impressoras em rede local com certificados autoassinados sem SAN/hostname
@@ -69,6 +71,7 @@ public class ColetorImpressoraService {
     private final LeituraContadorRepository leituraRepository;
     private final LeituraContadorService leituraContadorService;
     private final JdbcTemplate jdbcTemplate;
+    private final SnmpColetorService snmpColetorService;
 
     private static final String BASE_UPLOAD_DIR = "uploads/contadores";
     private final ExecutorService executor = Executors.newFixedThreadPool(8);
@@ -123,6 +126,25 @@ public class ColetorImpressoraService {
                     CONSTRAINT `fk_coleta_item_sessao` FOREIGN KEY (`sessao_id`) REFERENCES `coleta_contador_sessao`(`id`) ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             """);
+
+            try {
+                jdbcTemplate.execute("ALTER TABLE `coleta_contador_item` ADD COLUMN `nivel_toner` INT NULL");
+            } catch (Exception ignored) {}
+            try {
+                jdbcTemplate.execute("ALTER TABLE `coleta_contador_item` ADD COLUMN `numero_serie` VARCHAR(100) NULL");
+            } catch (Exception ignored) {}
+            try {
+                jdbcTemplate.execute("ALTER TABLE `coleta_contador_item` ADD COLUMN `metodo_coleta` VARCHAR(30) NULL");
+            } catch (Exception ignored) {}
+            Integer colunaInicio = jdbcTemplate.queryForObject("""
+                    SELECT COUNT(*) FROM information_schema.columns
+                    WHERE table_schema = DATABASE() AND table_name = 'coleta_contador_item'
+                    AND column_name = 'data_inicio_coleta'
+                    """, Integer.class);
+            if (colunaInicio == null || colunaInicio == 0) {
+                jdbcTemplate.execute("ALTER TABLE `coleta_contador_item` ADD COLUMN `data_inicio_coleta` DATETIME(6) NULL");
+            }
+
             log.info("Tabelas de coleta de contadores verificadas com sucesso.");
         } catch (Exception e) {
             log.warn("Verificacao de tabelas de coleta: {}", e.getMessage());
@@ -199,22 +221,29 @@ public class ColetorImpressoraService {
 
         List<InstalacaoImpressora> instalacoes = instalacaoRepository.findAllAtivasWithDetails();
 
-        // Filtra instalacoes que tenham impressora com IP valido e compativel (exclui Pantum, USB e rede Andrius que requerem leitura manual)
+        // Filtra instalacoes ativas conforme filtros de secretaria, empenho e selecao de impressoras
         List<InstalacaoImpressora> candidatas = instalacoes.stream()
                 .filter(inst -> inst.getImpressora() != null &&
-                                Boolean.TRUE.equals(inst.getImpressora().getAtivo()) &&
-                                isIpValido(inst.getImpressora().getIp()) &&
-                                !isModeloPantum(inst.getImpressora().getModelo()))
+                                Boolean.TRUE.equals(inst.getImpressora().getAtivo()))
                 .filter(inst -> request.getSecretariaId() == null ||
                                 (inst.getSecretaria() != null && inst.getSecretaria().getId().equals(request.getSecretariaId())))
                 .filter(inst -> request.getEmpenhoId() == null ||
                                 (inst.getEmpenho() != null && inst.getEmpenho().getId().equals(request.getEmpenhoId())))
+                .filter(inst -> request.getImpressoraIds() == null ||
+                                request.getImpressoraIds().contains(inst.getImpressora().getId()))
                 .sorted(Comparator.comparing(inst -> inst.getImpressora().getItemPedido() != null ? inst.getImpressora().getItemPedido() : 999))
                 .toList();
 
         if (candidatas.isEmpty()) {
-            throw new RuntimeException("Nenhuma impressora ativa com IP de rede compatível encontrada para os critérios informados.");
+            throw new RuntimeException("Nenhuma impressora ativa encontrada para os critérios informados.");
         }
+
+        List<Long> reservadas = controleIntervaloColetaService.reservarDisponiveis(
+                candidatas.stream().map(inst -> inst.getImpressora().getId()).toList());
+        int totalSolicitadas = candidatas.size();
+        candidatas = candidatas.stream().filter(inst -> reservadas.contains(inst.getImpressora().getId())).toList();
+        boolean agendado = false;
+        try {
 
         String subPasta = String.format("%d_%02d", request.getAno(), request.getMes());
         Path dirPath = Paths.get(BASE_UPLOAD_DIR, subPasta);
@@ -240,12 +269,14 @@ public class ColetorImpressoraService {
         List<ColetaContadorItem> itens = new ArrayList<>();
         for (InstalacaoImpressora inst : candidatas) {
             Impressora imp = inst.getImpressora();
-            String nomeArquivo = String.format("%02d - %s.png", imp.getItemPedido() != null ? imp.getItemPedido() : 0, imp.getIp().trim());
+            String ipStr = imp.getIp() != null ? imp.getIp().trim() : "";
+            String safeIp = ipStr.isBlank() ? "sem_ip" : ipStr.replaceAll("[^a-zA-Z0-9.-]", "_");
+            String nomeArquivo = String.format("%02d - %s.png", imp.getItemPedido() != null ? imp.getItemPedido() : 0, safeIp);
             ColetaContadorItem item = ColetaContadorItem.builder()
                     .sessao(sessao)
                     .impressoraId(imp.getId())
                     .itemPedido(imp.getItemPedido())
-                    .ip(imp.getIp().trim())
+                    .ip(ipStr)
                     .modelo(imp.getModelo())
                     .secretariaSigla(inst.getSecretaria() != null ? inst.getSecretaria().getSigla() : null)
                     .localInstalacao(inst.getLocalInstalacao())
@@ -262,8 +293,15 @@ public class ColetorImpressoraService {
         // Dispara processamento assincrono
         final Long sessaoId = sessao.getId();
         CompletableFuture.runAsync(() -> executarProcessamentoLote(sessaoId), executor);
-
-        return converterProgresso(sessao);
+        agendado = true;
+        ColetaProgressoDTO progresso = converterProgresso(sessao);
+        int bloqueadas = totalSolicitadas - candidatas.size();
+        if (bloqueadas > 0) progresso.setUltimaMensagem(progresso.getUltimaMensagem() +
+                " | " + bloqueadas + " impressora(s) ignorada(s) por intervalo de 2 minutos ou coleta em andamento.");
+        return progresso;
+        } finally {
+            if (!agendado) reservadas.forEach(controleIntervaloColetaService::liberar);
+        }
     }
 
     private void executarProcessamentoLote(Long sessaoId) {
@@ -297,59 +335,145 @@ public class ColetorImpressoraService {
     }
 
     private void processarItemIndividual(ColetaContadorItem item, String chromePath) {
+        try {
+            item.setDataInicioColeta(LocalDateTime.now());
+            itemRepository.save(item);
+            executarColetaItem(item, chromePath);
+        } catch (Exception e) {
+            log.error("Falha na coleta da impressora {}", item.getImpressoraId(), e);
+            item.setStatus("ERRO");
+            item.setMensagem("Falha durante a coleta. Aguarde o intervalo de 2 minutos antes de tentar novamente.");
+            itemRepository.save(item);
+        } finally {
+            controleIntervaloColetaService.liberar(item.getImpressoraId());
+        }
+    }
+
+    private void executarColetaItem(ColetaContadorItem item, String chromePath) {
         String ip = item.getIp();
         String modelo = item.getModelo() != null ? item.getModelo().toUpperCase() : "";
 
-        // 1. Verificacao rapida de conectividade (Fail-fast em portas 443 e 80 com tolerância a rede local)
-        boolean porta443 = isPortaAberta(ip, 443, 3000);
-        boolean porta80 = isPortaAberta(ip, 80, 2500);
-
-        if (!porta443 && !porta80) {
+        // 0. Se nao possuir IP de rede valido (ex: USB, rede Andrius ou em branco), marca como manual/offline
+        if (!isIpValido(ip)) {
             item.setStatus("OFFLINE");
-            item.setMensagem("Dispositivo desligado ou sem resposta na rede (timeout portas 443/80)");
+            String motivo = (ip == null || ip.isBlank()) ? "Sem IP cadastrado" : ip;
+            item.setMensagem("Equipamento " + motivo + " (requer anotação manual de hodômetro)");
             item.setDataColeta(LocalDateTime.now());
             itemRepository.save(item);
             atualizarProgressoParcial(item.getSessao().getId());
             return;
         }
 
+        // 1. Verificacao rapida de conectividade HTTP/HTTPS
+        boolean porta443 = isPortaAberta(ip, 443, 2000);
+        boolean porta80 = isPortaAberta(ip, 80, 2000);
+
+        // 2. Coleta Híbrida - Etapa 1: Leitura direta e instantânea via SNMP (UDP 161)
+        SnmpColetorService.SnmpResultado snmp = snmpColetorService.coletar(ip, modelo);
+        boolean snmpSucesso = snmp.sucesso();
+        if (snmpSucesso) {
+            if (snmp.contadorTotal() != null && snmp.contadorTotal() >= 0) {
+                item.setContadorTotal(snmp.contadorTotal());
+                item.setContadorMono(snmp.contadorMono() != null ? snmp.contadorMono() : snmp.contadorTotal());
+                item.setContadorColor(snmp.contadorColor() != null ? snmp.contadorColor() : 0);
+            }
+            if (snmp.copiasPrint() != null) item.setCopiasPrint(snmp.copiasPrint());
+            if (snmp.copiasCopiador() != null) item.setCopiasCopiador(snmp.copiasCopiador());
+            if (snmp.copiasScanner() != null) item.setCopiasScanner(snmp.copiasScanner());
+            if (snmp.numeroSerie() != null) item.setNumeroSerie(snmp.numeroSerie());
+            if (snmp.nivelToner() != null) item.setNivelToner(snmp.nivelToner());
+            item.setMetodoColeta("SNMP");
+        }
+
+        // Se portas web fechadas e SNMP também falhou, dispositivo está offline
+        if (!porta443 && !porta80 && !snmpSucesso) {
+            item.setStatus("OFFLINE");
+            item.setMensagem("Dispositivo desligado ou inacessível na rede (timeout portas 443/80 e SNMP 161)");
+            item.setDataColeta(LocalDateTime.now());
+            itemRepository.save(item);
+            atualizarProgressoParcial(item.getSessao().getId());
+            return;
+        }
+
+        // 3. Coleta Híbrida - Etapa 2: Fallback Web Scraping se SNMP não capturou contador total
+        if (item.getContadorTotal() == null && !isModeloPantum(modelo)) {
+            if (isSamsung(modelo)) {
+                extrairDadosSamsung(item);
+            } else if (isHp(modelo)) {
+                extrairDadosHp(item);
+            } else {
+                String url = resolverUrlPainel(ip, modelo, porta443, porta80);
+                extrairDadosContador(item, url);
+            }
+        }
+
+        // 4. Captura do PRINT ORIGINAL DO SITE DA IMPRESSORA
         File arquivoDestino = new File(item.getCaminhoArquivo());
         boolean printGerado = false;
 
-        if (isSamsung(modelo)) {
-            SamsungDados dadosSamsung = extrairDadosSamsung(item);
-            if (chromePath != null) {
-                printGerado = tirarScreenshotSamsung(chromePath, item, dadosSamsung, arquivoDestino);
+        if (isModeloPantum(modelo)) {
+            item.setDataColeta(LocalDateTime.now());
+            if (item.getContadorTotal() != null) {
+                try {
+                    pantumComprovanteService.gerar(item, arquivoDestino.toPath());
+                    printGerado = true;
+                } catch (IOException e) {
+                    log.warn("Erro ao gerar comprovante Pantum do IP {}: {}", ip, e.getMessage());
+                }
             }
-        } else if (isHp(modelo)) {
-            HpDados dadosHp = extrairDadosHp(item);
-            if (chromePath != null) {
+        } else if (chromePath != null && (porta80 || porta443)) {
+            String urlOriginal = resolverUrlPainel(ip, modelo, porta443, porta80);
+            // Captura SEMPRE prioritária da URL original do site da impressora
+            printGerado = tirarScreenshot(chromePath, urlOriginal, arquivoDestino);
+
+            // Se for Samsung/HP e a captura direta da URL falhou, tenta o fallback específico
+            if (!printGerado && isSamsung(modelo)) {
+                SamsungDados dadosSamsung = extrairDadosSamsung(item);
+                printGerado = tirarScreenshotSamsung(chromePath, item, dadosSamsung, arquivoDestino);
+            } else if (!printGerado && isHp(modelo)) {
+                HpDados dadosHp = extrairDadosHp(item);
                 printGerado = tirarScreenshotHp(chromePath, item, dadosHp, arquivoDestino);
             }
-        } else {
-            String url = resolverUrlPainel(ip, modelo, porta443, porta80);
-            extrairDadosContador(item, url);
-            if (chromePath != null) {
-                printGerado = tirarScreenshot(chromePath, url, arquivoDestino);
-            }
         }
 
-        if (printGerado) {
+        // Define método de coleta resultante
+        if (isModeloPantum(modelo) && snmpSucesso) {
+            item.setMetodoColeta("SNMP");
+        } else if (snmpSucesso && printGerado) {
+            item.setMetodoColeta("HIBRIDO");
+        } else if (snmpSucesso) {
+            item.setMetodoColeta("SNMP");
+        } else if (item.getContadorTotal() != null && item.getContadorTotal() >= 0) {
+            item.setMetodoColeta("WEB");
+        }
+
+        // 5. Definição do status e mensagem detalhada de auditoria
+        if (item.getContadorTotal() != null && item.getContadorTotal() >= 0) {
             item.setStatus("SUCESSO");
-            if (item.getContadorTotal() != null && item.getContadorTotal() > 0) {
-                item.setMensagem("Contadores e comprovante visual capturados com sucesso.");
-            } else {
-                item.setMensagem("Comprovante visual capturado em alta resolução.");
+            String modo = item.getMetodoColeta() != null ? item.getMetodoColeta() : "SNMP";
+            StringBuilder msg = new StringBuilder("Coletado via ").append(modo);
+            if (printGerado) {
+                msg.append(isModeloPantum(modelo) ? " com comprovante SNMP gerado" : " com print original do site capturado");
             }
-        } else if (item.getContadorTotal() != null && item.getContadorTotal() > 0) {
+            if (item.getNivelToner() != null) {
+                msg.append(" | Toner: ").append(item.getNivelToner()).append("%");
+            }
+            if (item.getNumeroSerie() != null && !item.getNumeroSerie().isBlank()) {
+                msg.append(" | S/N: ").append(item.getNumeroSerie());
+            }
+            item.setMensagem(msg.toString());
+        } else if (isModeloPantum(modelo)) {
+            item.setStatus("ERRO");
+            item.setMensagem("Contador Pantum não disponível via SNMP. Verifique SNMP v1/v2c, comunidade public e acesso UDP 161.");
+        } else if (printGerado) {
             item.setStatus("SUCESSO");
-            item.setMensagem("Contadores lidos com sucesso (sem comprovante visual do navegador).");
+            item.setMensagem("Print original do site da impressora capturado com sucesso.");
         } else {
             item.setStatus("ERRO");
-            item.setMensagem("Equipamento acessado, mas os contadores não puderam ser extraídos.");
+            item.setMensagem("Equipamento acessado, mas contadores ou print não puderam ser extraídos.");
         }
 
-        item.setDataColeta(LocalDateTime.now());
+        if (!isModeloPantum(modelo)) item.setDataColeta(LocalDateTime.now());
         itemRepository.save(item);
         atualizarProgressoParcial(item.getSessao().getId());
     }
@@ -1675,6 +1799,16 @@ public class ColetorImpressoraService {
                 .orElseThrow(() -> new RuntimeException("Sessão não encontrada"));
 
         Path caminho = Paths.get(sessao.getDiretorioPrints(), nomeArquivo);
+        itemRepository.findBySessaoIdOrderByItemPedidoAsc(sessaoId).stream()
+                .filter(i -> nomeArquivo.equals(i.getNomeArquivo()) && isModeloPantum(i.getModelo()) &&
+                        i.getContadorTotal() != null && i.getDataColeta() != null && "SUCESSO".equals(i.getStatus()))
+                .findFirst().ifPresent(i -> {
+                    try {
+                        pantumComprovanteService.gerar(i, caminho);
+                    } catch (IOException e) {
+                        throw new RuntimeException("Erro ao gerar comprovante Pantum", e);
+                    }
+                });
         if (!Files.exists(caminho)) {
             throw new RuntimeException("Imagem não encontrada: " + nomeArquivo);
         }
@@ -1701,6 +1835,9 @@ public class ColetorImpressoraService {
             for (ColetaContadorItem item : itens) {
                 if (item.getNomeArquivo() == null) continue;
                 File img = new File(sessao.getDiretorioPrints(), item.getNomeArquivo());
+                if (isModeloPantum(item.getModelo()) && item.getContadorTotal() != null && item.getDataColeta() != null) {
+                    pantumComprovanteService.gerar(item, img.toPath());
+                }
                 if (img.exists() && img.isFile()) {
                     ZipEntry ze = new ZipEntry(item.getNomeArquivo());
                     zos.putNextEntry(ze);
@@ -1762,13 +1899,19 @@ public class ColetorImpressoraService {
     public synchronized void recoletarItem(Long itemId) {
         ColetaContadorItem item = itemRepository.findById(itemId)
                 .orElseThrow(() -> new RuntimeException("Item de coleta não encontrado"));
-
+        controleIntervaloColetaService.reservar(item.getImpressoraId());
+        boolean agendado = false;
+        try {
         item.setStatus("PENDENTE");
         item.setMensagem("Recoleta individual iniciada...");
         itemRepository.save(item);
 
         String chromePath = buscarExecutavelNavegador();
         CompletableFuture.runAsync(() -> processarItemIndividual(item, chromePath), executor);
+        agendado = true;
+        } finally {
+            if (!agendado) controleIntervaloColetaService.liberar(item.getImpressoraId());
+        }
     }
 
     public synchronized void recoletarFalhas(Long sessaoId) {
@@ -1779,6 +1922,12 @@ public class ColetorImpressoraService {
         if (falhas.isEmpty()) {
             throw new RuntimeException("Não há itens pendentes ou com falha nesta sessão.");
         }
+
+        List<Long> reservadas = controleIntervaloColetaService.reservarDisponiveis(
+                falhas.stream().map(ColetaContadorItem::getImpressoraId).toList());
+        falhas = falhas.stream().filter(i -> reservadas.contains(i.getImpressoraId())).toList();
+        Set<Long> agendadas = new HashSet<>();
+        try {
 
         sessaoRepository.findById(sessaoId).ifPresent(s -> {
             s.setStatus("EM_ANDAMENTO");
@@ -1792,6 +1941,7 @@ public class ColetorImpressoraService {
             item.setMensagem("Tentando reconectar ao equipamento...");
             itemRepository.save(item);
             futures.add(CompletableFuture.runAsync(() -> processarItemIndividual(item, chromePath), executor));
+            agendadas.add(item.getImpressoraId());
         }
 
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).thenRun(() -> {
@@ -1806,6 +1956,9 @@ public class ColetorImpressoraService {
                 sessaoRepository.save(sessao);
             });
         });
+        } finally {
+            reservadas.stream().filter(id -> !agendadas.contains(id)).forEach(controleIntervaloColetaService::liberar);
+        }
     }
 
     private ColetaProgressoDTO converterProgresso(ColetaContadorSessao s) {
@@ -1855,6 +2008,9 @@ public class ColetorImpressoraService {
                 .copiasCopiador(i.getCopiasCopiador())
                 .copiasScanner(i.getCopiasScanner())
                 .dataColeta(i.getDataColeta())
+                .nivelToner(i.getNivelToner())
+                .numeroSerie(i.getNumeroSerie())
+                .metodoColeta(i.getMetodoColeta())
                 .build()
         ).toList();
 
