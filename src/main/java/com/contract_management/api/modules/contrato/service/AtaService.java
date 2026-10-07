@@ -13,8 +13,8 @@ import java.util.stream.Collectors;
 
 import com.contract_management.api.common.exception.BusinessException;
 import com.contract_management.api.common.exception.EntityNotFoundException;
-import com.contract_management.api.common.model.Ativo;
-import com.contract_management.api.common.repository.AtivoRepository;
+import com.contract_management.api.modules.ativo.model.Ativo;
+import com.contract_management.api.modules.ativo.api.AtivoConsulta;
 import com.contract_management.api.modules.contrato.dto.request.AtaRequestDTO;
 import com.contract_management.api.modules.contrato.dto.response.AtaResponseDTO;
 import com.contract_management.api.modules.contrato.model.AtaRegistroPreco;
@@ -29,13 +29,13 @@ import com.contract_management.api.modules.equipe.dto.response.MembroEquipeRespo
 import com.contract_management.api.modules.equipe.model.EquipeContrato;
 import com.contract_management.api.modules.equipe.model.EquipeMembro;
 import com.contract_management.api.modules.equipe.model.FuncaoEquipe;
-import com.contract_management.api.modules.equipe.repository.EquipeContratoRepository;
-import com.contract_management.api.modules.equipe.repository.FuncaoEquipeRepository;
+import com.contract_management.api.modules.equipe.api.EquipesVinculadas;
+import com.contract_management.api.modules.equipe.api.FuncaoEquipeConsulta;
 import com.contract_management.api.modules.secretaria.dto.response.SecretariaResponseDTO;
 import com.contract_management.api.modules.secretaria.model.Secretaria;
-import com.contract_management.api.modules.secretaria.repository.SecretariaRepository;
+import com.contract_management.api.modules.secretaria.api.SecretariaConsulta;
 import com.contract_management.api.modules.servidor.model.Servidor;
-import com.contract_management.api.modules.servidor.repository.ServidorRepository;
+import com.contract_management.api.modules.servidor.api.ServidorConsulta;
 
 @Service
 @RequiredArgsConstructor
@@ -45,11 +45,11 @@ public class AtaService {
     private final AtaRepository ataRepository;
     private final AtaSecretariaRepository ataSecretariaRepository;
     private final TipoRepository tipoRepository;
-    private final AtivoRepository ativoRepository;
-    private final SecretariaRepository secretariaRepository;
-    private final EquipeContratoRepository equipeContratoRepository;
-    private final ServidorRepository servidorRepository;
-    private final FuncaoEquipeRepository funcaoEquipeRepository;
+    private final AtivoConsulta ativoRepository;
+    private final SecretariaConsulta secretariaRepository;
+    private final EquipesVinculadas equipeContratoRepository;
+    private final ServidorConsulta servidorRepository;
+    private final FuncaoEquipeConsulta funcaoEquipeRepository;
 
     @Transactional(readOnly = true)
     public List<AtaResponseDTO> listarTodos() {

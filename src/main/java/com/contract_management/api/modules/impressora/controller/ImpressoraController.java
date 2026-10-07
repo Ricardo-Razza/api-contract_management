@@ -21,10 +21,10 @@ import com.contract_management.api.modules.impressora.dto.response.ImpressoraRes
 import com.contract_management.api.modules.impressora.dto.response.LeituraContadorResponseDTO;
 import com.contract_management.api.modules.impressora.dto.response.LoteImpressaoDTO;
 import com.contract_management.api.modules.impressora.dto.response.NotasFiscaisConsolidadoDTO;
-import com.contract_management.api.modules.impressora.service.EmpenhoImpressaoService;
-import com.contract_management.api.modules.impressora.service.ImpressoraService;
-import com.contract_management.api.modules.impressora.service.LeituraContadorService;
-import com.contract_management.api.modules.impressora.service.LoteImpressaoService;
+import com.contract_management.api.modules.impressora.service.financeiro.EmpenhoImpressaoService;
+import com.contract_management.api.modules.impressora.service.inventario.ImpressoraService;
+import com.contract_management.api.modules.impressora.service.medicao.LeituraContadorService;
+import com.contract_management.api.modules.impressora.service.financeiro.LoteImpressaoService;
 
 @RestController
 @RequestMapping("/impressoras")

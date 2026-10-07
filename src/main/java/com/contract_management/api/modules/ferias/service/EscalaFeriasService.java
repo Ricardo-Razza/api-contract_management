@@ -16,7 +16,7 @@ import com.contract_management.api.modules.ferias.model.Feriado;
 import com.contract_management.api.modules.ferias.repository.AgendamentoFeriasRepository;
 import com.contract_management.api.modules.ferias.repository.FeriadoRepository;
 import com.contract_management.api.modules.secretaria.model.Secretaria;
-import com.contract_management.api.modules.secretaria.repository.SecretariaRepository;
+import com.contract_management.api.modules.secretaria.api.SecretariaConsulta;
 import com.contract_management.api.modules.servidor.model.Servidor;
 
 @Service
@@ -26,7 +26,7 @@ public class EscalaFeriasService {
 
     private final AgendamentoFeriasRepository agendamentoRepository;
     private final FeriadoRepository feriadoRepository;
-    private final SecretariaRepository secretariaRepository;
+    private final SecretariaConsulta secretariaRepository;
 
     private static final String[] NOMES_MESES = {
             "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",

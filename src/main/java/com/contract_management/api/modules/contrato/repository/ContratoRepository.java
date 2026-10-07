@@ -1,5 +1,7 @@
 package com.contract_management.api.modules.contrato.repository;
 
+import com.contract_management.api.modules.contrato.api.ContratoConsulta;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Query;
@@ -13,7 +15,7 @@ import com.contract_management.api.modules.contrato.model.Contrato;
 import com.contract_management.api.modules.equipe.model.EquipeContrato;
 
 @Repository
-public interface ContratoRepository extends JpaRepository<Contrato, Long> {
+public interface ContratoRepository extends JpaRepository<Contrato, Long>, ContratoConsulta {
 
     @Override
     @EntityGraph(attributePaths = {"tipo", "ativo"})

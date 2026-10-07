@@ -16,7 +16,7 @@ import java.util.Map;
 import com.contract_management.api.modules.impressora.dto.request.IniciarColetaRequestDTO;
 import com.contract_management.api.modules.impressora.dto.response.ColetaProgressoDTO;
 import com.contract_management.api.modules.impressora.dto.response.ColetaSessaoDTO;
-import com.contract_management.api.modules.impressora.service.ColetorImpressoraService;
+import com.contract_management.api.modules.impressora.service.coleta.ColetorImpressoraService;
 
 @RestController
 @RequestMapping("/impressoras/coletas")

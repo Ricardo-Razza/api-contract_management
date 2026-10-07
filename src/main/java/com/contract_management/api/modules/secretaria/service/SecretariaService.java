@@ -11,8 +11,8 @@ import java.util.stream.Collectors;
 
 import com.contract_management.api.common.exception.BusinessException;
 import com.contract_management.api.common.exception.EntityNotFoundException;
-import com.contract_management.api.common.model.Ativo;
-import com.contract_management.api.common.repository.AtivoRepository;
+import com.contract_management.api.modules.ativo.model.Ativo;
+import com.contract_management.api.modules.ativo.api.AtivoConsulta;
 import com.contract_management.api.modules.secretaria.dto.request.SecretariaRequestDTO;
 import com.contract_management.api.modules.secretaria.dto.response.SecretariaResponseDTO;
 import com.contract_management.api.modules.secretaria.model.Secretaria;
@@ -24,7 +24,7 @@ import com.contract_management.api.modules.secretaria.repository.SecretariaRepos
 public class SecretariaService {
 
     private final SecretariaRepository secretariaRepository;
-    private final AtivoRepository ativoRepository;
+    private final AtivoConsulta ativoRepository;
 
     @Transactional(readOnly = true)
     public List<SecretariaResponseDTO> listarTodos() {

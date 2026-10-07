@@ -6,7 +6,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 import java.time.LocalDateTime;
 
-import com.contract_management.api.common.model.Ativo;
+import com.contract_management.api.modules.ativo.model.Ativo;
 import com.contract_management.api.modules.secretaria.model.Secretaria;
 
 @Entity

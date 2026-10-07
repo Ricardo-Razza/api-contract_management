@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.contract_management.api.common.model.Ativo;
+import com.contract_management.api.modules.ativo.model.Ativo;
 import com.contract_management.api.modules.contrato.model.AtaRegistroPreco;
 import com.contract_management.api.modules.contrato.model.Contrato;
 

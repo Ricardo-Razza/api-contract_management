@@ -63,16 +63,15 @@ docker-compose up -d
 
 ## 📁 Estrutura do Projeto
 
+A aplicação segue um monólito modular. Consulte [a arquitetura e as regras de manutenção](docs/arquitetura.md).
+
 ```
 src/main/java/com/contract_management/api/
 ├── common/                  # Componentes compartilhados
-│   ├── controller/          # Controllers genéricos (ex: Ativo)
 │   ├── exception/           # Tratamento global de exceções
-│   ├── model/               # Entidades compartilhadas (ex: Ativo)
-│   ├── repository/          # Repositórios compartilhados
-│   └── service/             # Serviços compartilhados
 ├── config/                  # Configurações transversais (CORS, Cache)
 ├── modules/                 # Módulos por Domínio de Negócio
+│   ├── ativo/               # Catálogo de situações
 │   ├── contrato/            # Gestão de Contratos, Atas e Notificações de Vencimento
 │   ├── equipe/              # Gestão de Equipes e Fiscalização de Contratos
 │   ├── ferias/              # Gestão de Férias, Afastamentos e Escala Anual

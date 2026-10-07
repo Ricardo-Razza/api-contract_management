@@ -10,10 +10,10 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import com.contract_management.api.common.exception.EntityNotFoundException;
-import com.contract_management.api.common.model.Ativo;
-import com.contract_management.api.common.repository.AtivoRepository;
+import com.contract_management.api.modules.ativo.model.Ativo;
+import com.contract_management.api.modules.ativo.api.AtivoConsulta;
 import com.contract_management.api.modules.secretaria.model.Secretaria;
-import com.contract_management.api.modules.secretaria.repository.SecretariaRepository;
+import com.contract_management.api.modules.secretaria.api.SecretariaConsulta;
 import com.contract_management.api.modules.servidor.dto.request.ServidorRequestDTO;
 import com.contract_management.api.modules.servidor.dto.response.ServidorResponseDTO;
 import com.contract_management.api.modules.servidor.model.Servidor;
@@ -25,8 +25,8 @@ import com.contract_management.api.modules.servidor.repository.ServidorRepositor
 public class ServidorService {
 
     private final ServidorRepository servidorRepository;
-    private final AtivoRepository ativoRepository;
-    private final SecretariaRepository secretariaRepository;
+    private final AtivoConsulta ativoRepository;
+    private final SecretariaConsulta secretariaRepository;
 
     @Transactional(readOnly = true)
     public List<ServidorResponseDTO> listarTodos() {

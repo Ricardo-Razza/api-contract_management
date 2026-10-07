@@ -1,5 +1,7 @@
 package com.contract_management.api.modules.contrato.repository;
 
+import com.contract_management.api.modules.contrato.api.AtaConsulta;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -8,14 +10,17 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
-import com.contract_management.api.common.model.Ativo;
+import com.contract_management.api.modules.ativo.model.Ativo;
 import com.contract_management.api.modules.contrato.model.AtaRegistroPreco;
 import com.contract_management.api.modules.contrato.model.AtaSecretaria;
 import com.contract_management.api.modules.equipe.model.EquipeContrato;
 import com.contract_management.api.modules.secretaria.model.Secretaria;
 
 @Repository
-public interface AtaRepository extends JpaRepository<AtaRegistroPreco, Long> {
+public interface AtaRepository extends JpaRepository<AtaRegistroPreco, Long>, AtaConsulta {
+    @Override
+    Optional<AtaRegistroPreco> findById(Long id);
+
 
     Optional<AtaRegistroPreco> findByNumeroAndAno(Integer numero, Integer ano);
     List<AtaRegistroPreco> findByAtivoId(Long ativoId);

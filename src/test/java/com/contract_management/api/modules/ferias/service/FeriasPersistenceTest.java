@@ -17,7 +17,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.contract_management.api.common.exception.BusinessException;
-import com.contract_management.api.common.model.Ativo;
+import com.contract_management.api.modules.ativo.model.Ativo;
 import com.contract_management.api.modules.ferias.dto.request.AgendamentoFeriasRequestDTO;
 import com.contract_management.api.modules.ferias.model.AgendamentoFerias;
 import com.contract_management.api.modules.ferias.model.PeriodoAquisitivo;

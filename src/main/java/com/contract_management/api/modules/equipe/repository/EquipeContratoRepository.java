@@ -1,5 +1,7 @@
 package com.contract_management.api.modules.equipe.repository;
 
+import com.contract_management.api.modules.equipe.api.EquipesVinculadas;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -9,7 +11,16 @@ import java.util.List;
 import com.contract_management.api.modules.equipe.model.EquipeContrato;
 
 @Repository
-public interface EquipeContratoRepository extends JpaRepository<EquipeContrato, Long> {
+public interface EquipeContratoRepository extends JpaRepository<EquipeContrato, Long>, EquipesVinculadas {
+    @Override
+    <S extends EquipeContrato> S save(S equipe);
+
+    @Override
+    void deleteAll(Iterable<? extends EquipeContrato> equipes);
+
+    @Override
+    void flush();
+
     List<EquipeContrato> findByContratoId(Long contratoId);
     List<EquipeContrato> findByAtaId(Long ataId);
 

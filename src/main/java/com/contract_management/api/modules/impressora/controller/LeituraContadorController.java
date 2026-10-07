@@ -12,7 +12,7 @@ import java.util.List;
 import com.contract_management.api.modules.impressora.dto.request.LeituraContadorRequestDTO;
 import com.contract_management.api.modules.impressora.dto.response.ItemGradeLeituraDTO;
 import com.contract_management.api.modules.impressora.dto.response.LeituraContadorResponseDTO;
-import com.contract_management.api.modules.impressora.service.LeituraContadorService;
+import com.contract_management.api.modules.impressora.service.medicao.LeituraContadorService;
 
 @RestController
 @RequestMapping("/impressoras/leituras")

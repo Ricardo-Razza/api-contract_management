@@ -9,7 +9,7 @@ import lombok.Setter;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.contract_management.api.common.model.Ativo;
+import com.contract_management.api.modules.ativo.model.Ativo;
 
 @Entity
 @Table(name = "funcao_equipe")

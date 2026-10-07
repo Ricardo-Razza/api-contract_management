@@ -20,7 +20,7 @@ import com.contract_management.api.modules.contrato.repository.NotificacaoVencim
 import com.contract_management.api.modules.contrato.service.EmailAlertaService;
 import com.contract_management.api.modules.equipe.model.EquipeContrato;
 import com.contract_management.api.modules.equipe.model.EquipeMembro;
-import com.contract_management.api.modules.equipe.repository.EquipeContratoRepository;
+import com.contract_management.api.modules.equipe.api.EquipesVinculadas;
 import com.contract_management.api.modules.servidor.model.Servidor;
 
 @Component
@@ -29,7 +29,7 @@ import com.contract_management.api.modules.servidor.model.Servidor;
 public class NotificacaoVencimentoScheduler {
 
     private final ContratoRepository contratoRepository;
-    private final EquipeContratoRepository equipeContratoRepository;
+    private final EquipesVinculadas equipeContratoRepository;
     private final NotificacaoVencimentoEnviadaRepository notificacaoRepository;
     private final AtaRepository ataRepository;
     private final EmailAlertaService emailAlertaService;

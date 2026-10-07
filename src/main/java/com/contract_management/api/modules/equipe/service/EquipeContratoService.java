@@ -10,12 +10,12 @@ import java.util.stream.Collectors;
 
 import com.contract_management.api.common.exception.BusinessException;
 import com.contract_management.api.common.exception.EntityNotFoundException;
-import com.contract_management.api.common.model.Ativo;
-import com.contract_management.api.common.repository.AtivoRepository;
+import com.contract_management.api.modules.ativo.model.Ativo;
+import com.contract_management.api.modules.ativo.api.AtivoConsulta;
 import com.contract_management.api.modules.contrato.model.AtaRegistroPreco;
 import com.contract_management.api.modules.contrato.model.Contrato;
-import com.contract_management.api.modules.contrato.repository.AtaRepository;
-import com.contract_management.api.modules.contrato.repository.ContratoRepository;
+import com.contract_management.api.modules.contrato.api.AtaConsulta;
+import com.contract_management.api.modules.contrato.api.ContratoConsulta;
 import com.contract_management.api.modules.equipe.dto.request.EquipeContratoRequestDTO;
 import com.contract_management.api.modules.equipe.dto.request.MembroEquipeRequestDTO;
 import com.contract_management.api.modules.equipe.dto.response.EquipeContratoResponseDTO;
@@ -26,7 +26,7 @@ import com.contract_management.api.modules.equipe.model.FuncaoEquipe;
 import com.contract_management.api.modules.equipe.repository.EquipeContratoRepository;
 import com.contract_management.api.modules.equipe.repository.FuncaoEquipeRepository;
 import com.contract_management.api.modules.servidor.model.Servidor;
-import com.contract_management.api.modules.servidor.repository.ServidorRepository;
+import com.contract_management.api.modules.servidor.api.ServidorConsulta;
 
 @Service
 @RequiredArgsConstructor
@@ -34,10 +34,10 @@ import com.contract_management.api.modules.servidor.repository.ServidorRepositor
 public class EquipeContratoService {
 
     private final EquipeContratoRepository equipeContratoRepository;
-    private final AtaRepository ataRepository;
-    private final ContratoRepository contratoRepository;
-    private final AtivoRepository ativoRepository;
-    private final ServidorRepository servidorRepository;
+    private final AtaConsulta ataRepository;
+    private final ContratoConsulta contratoRepository;
+    private final AtivoConsulta ativoRepository;
+    private final ServidorConsulta servidorRepository;
     private final FuncaoEquipeRepository funcaoEquipeRepository;
 
     @Transactional(readOnly = true)

@@ -17,7 +17,7 @@ import com.contract_management.api.modules.ferias.model.StatusFerias;
 import com.contract_management.api.modules.ferias.repository.AgendamentoFeriasRepository;
 import com.contract_management.api.modules.ferias.repository.PeriodoAquisitivoRepository;
 import com.contract_management.api.modules.servidor.model.Servidor;
-import com.contract_management.api.modules.servidor.repository.ServidorRepository;
+import com.contract_management.api.modules.servidor.api.ServidorConsulta;
 
 @Service
 @RequiredArgsConstructor
@@ -25,7 +25,7 @@ import com.contract_management.api.modules.servidor.repository.ServidorRepositor
 public class PeriodoAquisitivoService {
 
     private final PeriodoAquisitivoRepository periodoRepository;
-    private final ServidorRepository servidorRepository;
+    private final ServidorConsulta servidorRepository;
     private final jakarta.persistence.EntityManager entityManager;
     private final AgendamentoFeriasRepository agendamentoRepository;
 

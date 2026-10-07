@@ -20,8 +20,8 @@ import static org.mockito.Mockito.*;
 
 import com.contract_management.api.common.exception.BusinessException;
 import com.contract_management.api.common.exception.EntityNotFoundException;
-import com.contract_management.api.common.model.Ativo;
-import com.contract_management.api.common.repository.AtivoRepository;
+import com.contract_management.api.modules.ativo.model.Ativo;
+import com.contract_management.api.modules.ativo.repository.AtivoRepository;
 import com.contract_management.api.modules.contrato.dto.request.ContratoRequestDTO;
 import com.contract_management.api.modules.contrato.dto.response.ContratoResponseDTO;
 import com.contract_management.api.modules.contrato.model.Contrato;

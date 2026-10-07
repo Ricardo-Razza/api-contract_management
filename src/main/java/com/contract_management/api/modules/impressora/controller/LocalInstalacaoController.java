@@ -11,7 +11,7 @@ import java.util.List;
 
 import com.contract_management.api.modules.impressora.dto.request.LocalInstalacaoRequestDTO;
 import com.contract_management.api.modules.impressora.dto.response.LocalInstalacaoResponseDTO;
-import com.contract_management.api.modules.impressora.service.LocalInstalacaoService;
+import com.contract_management.api.modules.impressora.service.inventario.LocalInstalacaoService;
 
 @RestController
 @RequestMapping("/locais-instalacao")
