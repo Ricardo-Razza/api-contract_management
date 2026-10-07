@@ -18,6 +18,12 @@ import com.contract_management.api.modules.secretaria.model.Secretaria;
 
 @Repository
 public interface AtaRepository extends JpaRepository<AtaRegistroPreco, Long>, AtaConsulta {
+    @Query("SELECT DISTINCT a.ano FROM AtaRegistroPreco a ORDER BY a.ano DESC")
+    List<Integer> listarAnos();
+
+    @Query("SELECT DISTINCT a.tipo.tipoArp FROM AtaRegistroPreco a ORDER BY a.tipo.tipoArp")
+    List<String> listarTipos();
+
     @Override
     Optional<AtaRegistroPreco> findById(Long id);
 

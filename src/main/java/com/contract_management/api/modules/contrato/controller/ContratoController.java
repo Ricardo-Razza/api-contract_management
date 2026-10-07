@@ -1,5 +1,7 @@
 package com.contract_management.api.modules.contrato.controller;
 
+import com.contract_management.api.modules.contrato.dto.request.DocumentoFiltro;
+import com.contract_management.api.modules.contrato.dto.response.DocumentoFiltrosDTO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -27,10 +29,15 @@ public class ContratoController {
         return ResponseEntity.ok(contratoService.listarTodos());
     }
 
+    @GetMapping("/filtros")
+    public ResponseEntity<DocumentoFiltrosDTO> filtrosDisponiveis() {
+        return ResponseEntity.ok(contratoService.filtrosDisponiveis());
+    }
+
     @GetMapping("/paginado")
     public ResponseEntity<Page<ContratoResponseDTO>> listarPaginado(
-            @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC) Pageable pageable) {
-        return ResponseEntity.ok(contratoService.listarPaginado(pageable));
+            @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC) Pageable pageable, @ModelAttribute DocumentoFiltro filtro) {
+        return ResponseEntity.ok(contratoService.listarPaginado(pageable, filtro));
     }
 
     @GetMapping("/{id}")

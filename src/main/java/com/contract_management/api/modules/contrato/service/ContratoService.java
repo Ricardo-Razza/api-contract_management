@@ -1,5 +1,7 @@
 package com.contract_management.api.modules.contrato.service;
 
+import com.contract_management.api.modules.contrato.dto.request.DocumentoFiltro;
+import com.contract_management.api.modules.contrato.dto.response.DocumentoFiltrosDTO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -64,6 +66,20 @@ public class ContratoService {
         return contratos.stream()
                 .map(this::toResponseDTO)
                 .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public DocumentoFiltrosDTO filtrosDisponiveis() {
+        return new DocumentoFiltrosDTO(contratoRepository.listarAnos(), contratoRepository.listarTipos());
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ContratoResponseDTO> listarPaginado(Pageable pageable, DocumentoFiltro filtro) {
+        // A listagem padrão continua usando paginação do banco. Busca e ordenação especial
+        // preservam a semântica anterior sobre DTOs; apenas a página retorna ao navegador.
+        boolean ordemPadrao = pageable.getSort().stream().allMatch(order -> order.getProperty().equals("id"));
+        if (filtro.vazio() && ordemPadrao) return listarPaginado(pageable);
+        return DocumentoListagem.contratos(listarTodos(), pageable, filtro);
     }
 
     @Transactional(readOnly = true)

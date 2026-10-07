@@ -16,6 +16,12 @@ import com.contract_management.api.modules.equipe.model.EquipeContrato;
 
 @Repository
 public interface ContratoRepository extends JpaRepository<Contrato, Long>, ContratoConsulta {
+    @Query("SELECT DISTINCT c.ano FROM Contrato c ORDER BY c.ano DESC")
+    List<Integer> listarAnos();
+
+    @Query("SELECT DISTINCT c.tipo.tipoArp FROM Contrato c ORDER BY c.tipo.tipoArp")
+    List<String> listarTipos();
+
 
     @Override
     @EntityGraph(attributePaths = {"tipo", "ativo"})
