@@ -38,6 +38,9 @@ public class FaturamentoImpressaoService {
             "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
     };
 
+    private static final int COMPETENCIA_PADRAO_MES = 8;
+    private static final int COMPETENCIA_PADRAO_ANO = 2026;
+
     private static final String[] MESES_SIGLAS = {
             "Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
             "Jul", "Ago", "Set", "Out", "Nov", "Dez"
@@ -45,8 +48,8 @@ public class FaturamentoImpressaoService {
 
     @Transactional(readOnly = true)
     public EspelhoFaturaDTO gerarEspelhoFatura(Long empenhoId, Integer mes, Integer ano) {
-        if (mes == null) mes = 8;
-        if (ano == null) ano = 2026;
+        if (mes == null) mes = COMPETENCIA_PADRAO_MES;
+        if (ano == null) ano = COMPETENCIA_PADRAO_ANO;
 
         EmpenhoImpressao empenho = empenhoRepository.findById(empenhoId)
                 .orElseThrow(() -> new EntityNotFoundException("Empenho de Impressão", empenhoId));
@@ -238,7 +241,7 @@ public class FaturamentoImpressaoService {
 
     @Transactional(readOnly = true)
     public List<EspelhoFaturaDTO> gerarNotasFiscaisLote(List<Integer> meses, Integer mes, Integer ano, Long empenhoId) {
-        if (ano == null) ano = 2026;
+        if (ano == null) ano = LocalDate.now().getYear();
 
         List<Integer> listaMeses = new ArrayList<>();
         if (meses != null && !meses.isEmpty()) {
@@ -246,7 +249,7 @@ public class FaturamentoImpressaoService {
         } else if (mes != null) {
             listaMeses.add(mes);
         } else {
-            listaMeses.add(8);
+            listaMeses.add(LocalDate.now().getMonthValue());
         }
         listaMeses.sort(Integer::compareTo);
 
@@ -283,7 +286,7 @@ public class FaturamentoImpressaoService {
 
     @Transactional(readOnly = true)
     public NotasFiscaisConsolidadoDTO obterNotasFiscaisConsolidado(Integer ano) {
-        if (ano == null) ano = 2026;
+        if (ano == null) ano = LocalDate.now().getYear();
 
         List<EmpenhoImpressao> empenhos = empenhoRepository.findByAtivoTrueOrderByNumeroEmpenhoAsc();
         List<LeituraContador> leiturasAno = leituraRepository.findByAnoWithDetails(ano);

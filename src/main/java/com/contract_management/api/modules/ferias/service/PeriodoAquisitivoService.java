@@ -6,12 +6,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import com.contract_management.api.common.exception.BusinessException;
 import com.contract_management.api.common.exception.EntityNotFoundException;
 import com.contract_management.api.modules.ferias.dto.request.PeriodoAquisitivoRequestDTO;
 import com.contract_management.api.modules.ferias.dto.response.PeriodoAquisitivoResponseDTO;
+import com.contract_management.api.modules.ferias.model.AgendamentoFerias;
 import com.contract_management.api.modules.ferias.model.PeriodoAquisitivo;
 import com.contract_management.api.modules.ferias.model.StatusFerias;
 import com.contract_management.api.modules.ferias.repository.AgendamentoFeriasRepository;
@@ -31,7 +33,7 @@ public class PeriodoAquisitivoService {
 
     @Transactional(readOnly = true)
     public List<PeriodoAquisitivoResponseDTO> listar() {
-        return periodoRepository.listarTodos().stream().map(this::toResponseDTO).toList();
+        return mapearListaPeriodos(periodoRepository.listarTodos());
     }
 
     private void validar(PeriodoAquisitivoRequestDTO dto, Long id) {
@@ -62,9 +64,7 @@ public class PeriodoAquisitivoService {
     @Transactional(readOnly = true)
     public List<PeriodoAquisitivoResponseDTO> listarPorServidor(Long servidorId) {
         log.info("Listando períodos aquisitivos para o servidor ID: {}", servidorId);
-        return periodoRepository.findByServidorIdOrderByAnoInicioDesc(servidorId).stream()
-                .map(this::toResponseDTO)
-                .collect(Collectors.toList());
+        return mapearListaPeriodos(periodoRepository.findByServidorIdOrderByAnoInicioDesc(servidorId));
     }
 
     @Transactional(readOnly = true)
@@ -186,7 +186,26 @@ public class PeriodoAquisitivoService {
         return PALETA_CORES.get(index);
     }
 
+    private List<PeriodoAquisitivoResponseDTO> mapearListaPeriodos(List<PeriodoAquisitivo> periodos) {
+        if (periodos.isEmpty()) {
+            return List.of();
+        }
+        List<Long> ids = periodos.stream().map(PeriodoAquisitivo::getId).toList();
+        Map<Long, List<AgendamentoFerias>> agendamentosPorPeriodo = agendamentoRepository.findByPeriodoAquisitivoIdIn(ids)
+                .stream()
+                .collect(Collectors.groupingBy(a -> a.getPeriodoAquisitivo().getId()));
+
+        return periodos.stream()
+                .map(p -> toResponseDTO(p, agendamentosPorPeriodo.getOrDefault(p.getId(), List.of())))
+                .toList();
+    }
+
     public PeriodoAquisitivoResponseDTO toResponseDTO(PeriodoAquisitivo periodo) {
+        List<AgendamentoFerias> agendamentos = agendamentoRepository.findByPeriodoAquisitivoId(periodo.getId());
+        return toResponseDTO(periodo, agendamentos);
+    }
+
+    public PeriodoAquisitivoResponseDTO toResponseDTO(PeriodoAquisitivo periodo, List<AgendamentoFerias> agendamentos) {
         PeriodoAquisitivoResponseDTO dto = new PeriodoAquisitivoResponseDTO();
         dto.setId(periodo.getId());
         dto.setServidorId(periodo.getServidor().getId());
@@ -200,7 +219,7 @@ public class PeriodoAquisitivoService {
         dto.setLimiteGozo(periodo.getLimiteGozo());
         dto.setTotalDias(periodo.getTotalDias());
         dto.setDiasUsados(periodo.getDiasUsados());
-        int gozados = agendamentoRepository.findByPeriodoAquisitivoId(periodo.getId()).stream()
+        int gozados = (agendamentos != null ? agendamentos : List.<AgendamentoFerias>of()).stream()
                 .filter(a -> a.getStatus() == StatusFerias.CONFIRMADO)
                 .mapToInt(a -> {
                     LocalDate ate = a.getDataFim().isBefore(LocalDate.now()) ? a.getDataFim() : LocalDate.now();

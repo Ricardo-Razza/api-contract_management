@@ -2,6 +2,7 @@ package com.contract_management.api.modules.impressora.service.coleta;
 
 import com.contract_management.api.common.exception.BusinessException;
 import com.contract_management.api.modules.impressora.repository.ColetaContadorItemRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.time.Clock;
 import java.time.Duration;

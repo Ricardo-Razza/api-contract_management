@@ -97,6 +97,12 @@ public class NotificacaoVencimentoScheduler {
         for (EquipeContrato equipe : equipes) {
             for (EquipeMembro membro : equipe.getMembros()) {
                 Servidor servidor = membro.getServidor();
+                if (servidor == null) continue;
+                if (servidor.getEmail() == null || servidor.getEmail().isBlank()) {
+                    log.warn("Servidor {} (id={}) não possui e-mail cadastrado para alerta do contrato {}/{}",
+                            servidor.getNome(), servidor.getId(), contrato.getNumero(), contrato.getAno());
+                    continue;
+                }
                 try {
                     emailAlertaService.enviarAlertaVencimento(
                             servidor.getEmail(),
@@ -119,7 +125,6 @@ public class NotificacaoVencimentoScheduler {
         return algumEnviado;
     }
 
-    @Transactional
     private void registrarNotificacaoContrato(Contrato contrato, int diasAlerta) {
         NotificacaoVencimentoEnviada registro = NotificacaoVencimentoEnviada.builder()
                 .contrato(contrato)
@@ -192,6 +197,12 @@ public class NotificacaoVencimentoScheduler {
         for (EquipeContrato equipe : equipes) {
             for (EquipeMembro membro : equipe.getMembros()) {
                 Servidor servidor = membro.getServidor();
+                if (servidor == null) continue;
+                if (servidor.getEmail() == null || servidor.getEmail().isBlank()) {
+                    log.warn("Servidor {} (id={}) não possui e-mail cadastrado para alerta da ata {}/{}",
+                            servidor.getNome(), servidor.getId(), ata.getNumero(), ata.getAno());
+                    continue;
+                }
                 try {
                     emailAlertaService.enviarAlertaVencimentoAta(
                             servidor.getEmail(),
@@ -214,7 +225,6 @@ public class NotificacaoVencimentoScheduler {
         return algumEnviado;
     }
 
-    @Transactional
     private void registrarNotificacaoAta(AtaRegistroPreco ata, int diasAlerta) {
         NotificacaoVencimentoEnviada registro = NotificacaoVencimentoEnviada.builder()
                 .ata(ata)

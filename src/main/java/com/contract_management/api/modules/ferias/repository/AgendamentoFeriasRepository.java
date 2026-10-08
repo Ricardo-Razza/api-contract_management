@@ -15,6 +15,8 @@ public interface AgendamentoFeriasRepository extends JpaRepository<AgendamentoFe
     List<AgendamentoFerias> findByServidorIdOrderByDataInicioAsc(Long servidorId);
 
     List<AgendamentoFerias> findByPeriodoAquisitivoId(Long periodoAquisitivoId);
+
+    List<AgendamentoFerias> findByPeriodoAquisitivoIdIn(List<Long> periodoAquisitivoIds);
     @Query("SELECT a FROM AgendamentoFerias a JOIN FETCH a.servidor s LEFT JOIN FETCH s.secretaria LEFT JOIN FETCH a.periodoAquisitivo WHERE a.dataInicio <= :fim AND a.dataFim >= :inicio ORDER BY a.dataInicio, s.nome")
     List<AgendamentoFerias> listarIntervalo(@Param("inicio") LocalDate inicio, @Param("fim") LocalDate fim);
 

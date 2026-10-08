@@ -38,6 +38,8 @@ import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+import com.contract_management.api.common.exception.BusinessException;
+import com.contract_management.api.common.exception.EntityNotFoundException;
 import com.contract_management.api.modules.contrato.model.Tipo;
 import com.contract_management.api.modules.impressora.dto.request.IniciarColetaRequestDTO;
 import com.contract_management.api.modules.impressora.dto.request.LeituraContadorRequestDTO;
@@ -319,21 +321,20 @@ public class ColetorImpressoraService {
             futures.add(CompletableFuture.runAsync(() -> processarItemIndividual(item, chromePath), executor));
         }
 
-        // Aguarda todas as tarefas finalizarem
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        // Encadeia a finalizacao da sessao assincronamente sem bloquear a thread com join()
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).thenRun(() -> {
+            sessaoRepository.findById(sessaoId).ifPresent(sessao -> {
+                List<ColetaContadorItem> atualizados = itemRepository.findBySessaoIdOrderByItemPedidoAsc(sessaoId);
+                int sucessos = (int) atualizados.stream().filter(i -> "SUCESSO".equals(i.getStatus())).count();
+                int falhas = atualizados.size() - sucessos;
 
-        // Atualiza contadores finais da sessao
-        sessaoRepository.findById(sessaoId).ifPresent(sessao -> {
-            List<ColetaContadorItem> atualizados = itemRepository.findBySessaoIdOrderByItemPedidoAsc(sessaoId);
-            int sucessos = (int) atualizados.stream().filter(i -> "SUCESSO".equals(i.getStatus())).count();
-            int falhas = atualizados.size() - sucessos;
-
-            sessao.setTotalSucesso(sucessos);
-            sessao.setTotalFalhas(falhas);
-            sessao.setStatus("CONCLUIDO");
-            sessao.setDataFim(LocalDateTime.now());
-            sessaoRepository.save(sessao);
-            log.info("Sessao de coleta ID {} finalizada com {} sucessos e {} falhas.", sessaoId, sucessos, falhas);
+                sessao.setTotalSucesso(sucessos);
+                sessao.setTotalFalhas(falhas);
+                sessao.setStatus("CONCLUIDO");
+                sessao.setDataFim(LocalDateTime.now());
+                sessaoRepository.save(sessao);
+                log.info("Sessao de coleta ID {} finalizada com {} sucessos e {} falhas.", sessaoId, sucessos, falhas);
+            });
         });
     }
 
@@ -1777,6 +1778,20 @@ public class ColetorImpressoraService {
     }
 
     private String buscarExecutavelNavegador() {
+        String os = System.getProperty("os.name", "").toLowerCase();
+        if (os.contains("linux")) {
+            String[] linuxPaths = {
+                    "/usr/bin/chromium-browser",
+                    "/usr/bin/chromium",
+                    "/usr/bin/google-chrome-stable",
+                    "/usr/bin/google-chrome"
+            };
+            for (String p : linuxPaths) {
+                if (new File(p).exists()) return p;
+            }
+            return "chromium";
+        }
+
         String[] paths = {
                 "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
                 "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
@@ -1799,7 +1814,7 @@ public class ColetorImpressoraService {
 
     public ColetaSessaoDTO obterSessao(Long sessaoId) {
         ColetaContadorSessao sessao = sessaoRepository.findById(sessaoId)
-                .orElseThrow(() -> new RuntimeException("Sessão de coleta não encontrada"));
+                .orElseThrow(() -> new EntityNotFoundException("Sessão de coleta", sessaoId));
         return converterSessao(sessao);
     }
 
@@ -1811,9 +1826,15 @@ public class ColetorImpressoraService {
 
     public byte[] obterImagem(Long sessaoId, String nomeArquivo) {
         ColetaContadorSessao sessao = sessaoRepository.findById(sessaoId)
-                .orElseThrow(() -> new RuntimeException("Sessão não encontrada"));
+                .orElseThrow(() -> new EntityNotFoundException("Sessão de coleta", sessaoId));
 
-        Path caminho = Paths.get(sessao.getDiretorioPrints(), nomeArquivo);
+        Path dirPrints = Paths.get(sessao.getDiretorioPrints()).toAbsolutePath().normalize();
+        Path caminho = dirPrints.resolve(nomeArquivo).normalize();
+
+        if (!caminho.startsWith(dirPrints)) {
+            throw new BusinessException("Acesso negado: caminho de arquivo inválido.");
+        }
+
         itemRepository.findBySessaoIdOrderByItemPedidoAsc(sessaoId).stream()
                 .filter(i -> nomeArquivo.equals(i.getNomeArquivo()) && usaComprovantePadrao(i.getModelo()) &&
                         i.getContadorTotal() != null && i.getDataColeta() != null && "SUCESSO".equals(i.getStatus()))
@@ -1825,7 +1846,7 @@ public class ColetorImpressoraService {
                     }
                 });
         if (!Files.exists(caminho)) {
-            throw new RuntimeException("Imagem não encontrada: " + nomeArquivo);
+            throw new EntityNotFoundException("Imagem não encontrada: " + nomeArquivo);
         }
 
         try {
@@ -1913,17 +1934,40 @@ public class ColetorImpressoraService {
 
     public synchronized void recoletarItem(Long itemId) {
         ColetaContadorItem item = itemRepository.findById(itemId)
-                .orElseThrow(() -> new RuntimeException("Item de coleta não encontrado"));
+                .orElseThrow(() -> new EntityNotFoundException("Item de coleta", itemId));
         controleIntervaloColetaService.reservar(item.getImpressoraId());
         boolean agendado = false;
         try {
-        item.setStatus("PENDENTE");
-        item.setMensagem("Recoleta individual iniciada...");
-        itemRepository.save(item);
+            item.setStatus("PENDENTE");
+            item.setMensagem("Recoleta individual iniciada...");
+            itemRepository.save(item);
 
-        String chromePath = buscarExecutavelNavegador();
-        CompletableFuture.runAsync(() -> processarItemIndividual(item, chromePath), executor);
-        agendado = true;
+            ColetaContadorSessao sessao = item.getSessao();
+            Long sessaoId = sessao != null ? sessao.getId() : null;
+            if (sessaoId != null) {
+                sessaoRepository.findById(sessaoId).ifPresent(s -> {
+                    s.setStatus("EM_ANDAMENTO");
+                    sessaoRepository.save(s);
+                });
+            }
+
+            String chromePath = buscarExecutavelNavegador();
+            CompletableFuture.runAsync(() -> processarItemIndividual(item, chromePath), executor)
+                    .thenRun(() -> {
+                        if (sessaoId != null) {
+                            sessaoRepository.findById(sessaoId).ifPresent(s -> {
+                                List<ColetaContadorItem> atualizados = itemRepository.findBySessaoIdOrderByItemPedidoAsc(sessaoId);
+                                int sucessos = (int) atualizados.stream().filter(i -> "SUCESSO".equals(i.getStatus())).count();
+                                int totalFalhas = atualizados.size() - sucessos;
+                                s.setTotalSucesso(sucessos);
+                                s.setTotalFalhas(totalFalhas);
+                                s.setStatus("CONCLUIDO");
+                                s.setDataFim(LocalDateTime.now());
+                                sessaoRepository.save(s);
+                            });
+                        }
+                    });
+            agendado = true;
         } finally {
             if (!agendado) controleIntervaloColetaService.liberar(item.getImpressoraId());
         }
