@@ -1,4 +1,6 @@
 spring:
+  profiles:
+    default: dev
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
@@ -9,11 +11,10 @@ spring:
     hibernate:
       ddl-auto: none
     show-sql: false
+    open-in-view: false
     properties:
       hibernate:
         format_sql: false
-        dialect: org.hibernate.dialect.MySQLDialect
-    open-in-view: false
 
   servlet:
     multipart:
