@@ -37,8 +37,8 @@ API REST para administração centralizada de contratos, atas de registro de pre
 
 ```bash
 # Clone o repositório
-git clone https://github.com/seu-usuario/contract-management-api.git
-cd contract-management-api
+git clone https://github.com/Ricardo-Razza/api-contract_management.git
+cd api-contract_management
 
 # Configure o banco de dados
 mysql -u root -p
