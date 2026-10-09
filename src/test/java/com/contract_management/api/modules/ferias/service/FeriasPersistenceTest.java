@@ -33,7 +33,8 @@ import com.contract_management.api.modules.servidor.model.Servidor;
     "spring.datasource.driver-class-name=org.h2.Driver", "spring.datasource.username=sa", "spring.datasource.password=",
     "spring.jpa.hibernate.ddl-auto=create-drop", "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
     "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect", "spring.sql.init.mode=never",
-    "spring.jpa.show-sql=false", "logging.level.org.hibernate.SQL=WARN", "spring.main.banner-mode=off"
+    "spring.jpa.show-sql=false", "logging.level.org.hibernate.SQL=WARN", "spring.main.banner-mode=off",
+    "spring.flyway.enabled=false"
 })
 class FeriasPersistenceTest {
     @Configuration
