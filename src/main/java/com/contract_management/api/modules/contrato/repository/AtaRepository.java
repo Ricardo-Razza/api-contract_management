@@ -29,8 +29,6 @@ public interface AtaRepository extends JpaRepository<AtaRegistroPreco, Long>, At
 
 
     Optional<AtaRegistroPreco> findByNumeroAndAno(Integer numero, Integer ano);
-    List<AtaRegistroPreco> findByAtivoId(Long ativoId);
-    List<AtaRegistroPreco> findByDataFimBefore(LocalDate data);
     List<AtaRegistroPreco> findByDataFim(LocalDate dataFim);
 
 

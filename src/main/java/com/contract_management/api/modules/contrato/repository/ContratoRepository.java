@@ -31,14 +31,7 @@ public interface ContratoRepository extends JpaRepository<Contrato, Long>, Contr
     @EntityGraph(attributePaths = {"tipo", "ativo"})
     Optional<Contrato> findById(Long id);
 
-    Optional<Contrato> findByNumeroAndAno(Integer numero, Integer ano);
-
     boolean existsByNumeroAndAno(Integer numero, Integer ano);
-
-    List<Contrato> findByAtivoId(Long ativoId);
-
-    List<Contrato> findByDataFimBefore(LocalDate data);
-
 
     @Query("""
         SELECT c FROM Contrato c
@@ -46,9 +39,6 @@ public interface ContratoRepository extends JpaRepository<Contrato, Long>, Contr
           AND c.ativo.situacao = 'ATIVO'
         """)
     List<Contrato> findByDataFim(@Param("data") LocalDate data);
-
-    // Alternativa via Derived Query Method (sem precisar da anotação @Query)
-    List<Contrato> findByDataFimAndAtivoSituacao(LocalDate dataFim, String situacao);
 
     /**
      * Carrega todos os contratos com tipo, ativo e secretarias vinculadas em uma única query com JOIN FETCH.
