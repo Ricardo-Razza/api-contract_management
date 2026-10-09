@@ -53,4 +53,51 @@ class GlobalExceptionHandlerTest {
         assertTrue(json.contains("\"status\":400"));
         assertTrue(json.contains("Regra de negócio violada"));
     }
+
+    @Test
+    void deveRetornar400ParaHttpMessageNotReadable() {
+        org.springframework.http.converter.HttpMessageNotReadableException ex =
+                new org.springframework.http.converter.HttpMessageNotReadableException("JSON syntax error", new org.springframework.mock.http.MockHttpInputMessage(new byte[0]));
+        ResponseEntity<GlobalExceptionHandler.ErrorResponse> response = exceptionHandler.handleHttpMessageNotReadable(ex);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(400, response.getBody().getStatus());
+        assertTrue(response.getBody().getMessage().contains("Corpo da requisição inválido"));
+    }
+
+    @Test
+    void deveRetornar400ParaMethodArgumentTypeMismatch() {
+        org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex =
+                new org.springframework.web.method.annotation.MethodArgumentTypeMismatchException("abc", Long.class, "id", null, null);
+        ResponseEntity<GlobalExceptionHandler.ErrorResponse> response = exceptionHandler.handleMethodArgumentTypeMismatch(ex);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(400, response.getBody().getStatus());
+        assertTrue(response.getBody().getMessage().contains("id"));
+    }
+
+    @Test
+    void deveRetornar409ParaDataIntegrityViolation() {
+        org.springframework.dao.DataIntegrityViolationException ex =
+                new org.springframework.dao.DataIntegrityViolationException("foreign key constraint fails");
+        ResponseEntity<GlobalExceptionHandler.ErrorResponse> response = exceptionHandler.handleDataIntegrityViolation(ex);
+
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(409, response.getBody().getStatus());
+        assertTrue(response.getBody().getMessage().contains("Operação não permitida"));
+    }
+
+    @Test
+    void deveRetornar500ELogarStacktraceParaExceptionGenerica() {
+        Exception ex = new RuntimeException("Erro inesperado de teste");
+        ResponseEntity<GlobalExceptionHandler.ErrorResponse> response = exceptionHandler.handleGeneric(ex);
+
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(500, response.getBody().getStatus());
+        assertEquals("Ocorreu um erro interno no servidor", response.getBody().getMessage());
+    }
 }
