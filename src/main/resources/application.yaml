@@ -71,3 +71,15 @@ springdoc:
 logging:
   level:
     com.contract_management: INFO
+
+management:
+  endpoints:
+    web:
+      base-path: /actuator
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
