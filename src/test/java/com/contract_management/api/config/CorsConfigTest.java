@@ -28,7 +28,7 @@ class CorsConfigTest {
         assertThat(configs).containsKey("/**");
 
         CorsConfiguration config = configs.get("/**");
-        assertThat(config.getAllowedOrigins()).containsExactly("http://localhost:4200", "https://meudominio.com");
+        assertThat(config.getAllowedOriginPatterns()).containsExactly("http://localhost:4200", "https://meudominio.com");
         assertThat(config.checkOrigin("http://localhost:4200")).isEqualTo("http://localhost:4200");
         assertThat(config.checkOrigin("https://meudominio.com")).isEqualTo("https://meudominio.com");
         assertThat(config.checkOrigin("http://evil.com")).isNull();
