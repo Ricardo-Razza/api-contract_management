@@ -53,7 +53,38 @@ mvn clean compile
 mvn spring-boot:run
 ```
 
-A API estará disponível em `http://localhost:8081/api`
+### Variáveis de Ambiente (.env)
+
+Copie o `.env.example` para `.env` e configure:
+
+| Variável | Padrão | Descrição |
+| :--- | :--- | :--- |
+| `DB_URL` | `jdbc:mysql://localhost:3306/...` | URL JDBC de conexão com o MySQL |
+| `DB_USERNAME` | `app_user` | Usuário do banco de dados |
+| `DB_PASSWORD` | - | Senha do banco de dados |
+| `MAIL_USERNAME` | - | Conta SMTP para envio de notificações |
+| `MAIL_APP_PASSWORD` | - | Senha de aplicativo / token SMTP |
+| `SERVER_PORT` | `8081` | Porta HTTP da aplicação |
+| `SERVER_SERVLET_CONTEXT_PATH` | `/api` | Prefixo global dos endpoints |
+| `LOGGING_LEVEL_COM_CONTRACT_MANAGEMENT` | `INFO` | Nível de log dos módulos do sistema |
+
+### Portas e Endpoints Principais
+
+* **API Base**: `http://localhost:8081/api`
+* **Swagger UI**: `http://localhost:8081/api/swagger-ui.html`
+* **OpenAPI Spec (JSON)**: `http://localhost:8081/api/api-docs`
+* **Frontend Integrado**: `http://localhost:4200`
+
+### Execução Conjunta (Backend + Frontend)
+
+Para iniciar ambos os projetos simultaneamente no Windows:
+```powershell
+# A partir do diretório raiz de projetos:
+.\iniciar.ps1
+
+# Ou para finalizar os processos:
+.\parar-contract-management.bat
+```
 
 ### Instalação com Docker
 
