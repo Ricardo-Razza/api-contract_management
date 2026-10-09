@@ -25,6 +25,7 @@ import com.contract_management.api.modules.contrato.model.Tipo;
 import com.contract_management.api.modules.contrato.repository.AtaRepository;
 import com.contract_management.api.modules.contrato.repository.AtaSecretariaRepository;
 import com.contract_management.api.modules.contrato.repository.TipoRepository;
+import com.contract_management.api.modules.contrato.mapper.AtaMapper;
 import com.contract_management.api.modules.equipe.dto.request.MembroEquipeRequestDTO;
 import com.contract_management.api.modules.equipe.dto.response.EquipeContratoResponseDTO;
 import com.contract_management.api.modules.equipe.dto.response.MembroEquipeResponseDTO;
@@ -52,6 +53,7 @@ public class AtaService {
     private final EquipesVinculadas equipeContratoRepository;
     private final ServidorConsulta servidorRepository;
     private final FuncaoEquipeConsulta funcaoEquipeRepository;
+    private final AtaMapper ataMapper;
 
     @Transactional(readOnly = true)
     public List<AtaResponseDTO> listarTodos() {
@@ -64,7 +66,7 @@ public class AtaService {
             }
         }
         return atas.stream()
-                .map(this::toResponseDTO)
+                .map(ataMapper::toResponseDTO)
                 .collect(Collectors.toList());
     }
 
@@ -94,7 +96,7 @@ public class AtaService {
                 ataRepository.carregarMembrosEquipes(atas);
             }
         }
-        return pagina.map(this::toResponseDTO);
+        return pagina.map(ataMapper::toResponseDTO);
     }
 
     @Transactional(readOnly = true)
@@ -105,7 +107,7 @@ public class AtaService {
         if (ata.getEquipe() != null && !ata.getEquipe().isEmpty()) {
             ataRepository.carregarMembrosEquipePorAtaId(id);
         }
-        return toResponseDTO(ata);
+        return ataMapper.toResponseDTO(ata);
     }
 
     @Transactional
@@ -300,107 +302,5 @@ public class AtaService {
 
     private AtaRegistroPreco savedOrUpdated(AtaRegistroPreco ata) {
         return ataRepository.save(ata);
-    }
-
-    // converte entidade para response
-    private AtaResponseDTO toResponseDTO(AtaRegistroPreco ata) {
-        AtaResponseDTO dto = new AtaResponseDTO();
-
-        // dados basicos
-        dto.setId(ata.getId());
-        dto.setNumero(ata.getNumero());
-        dto.setAno(ata.getAno());
-        dto.setDataInicio(ata.getDataInicio());
-        dto.setDataFim(ata.getDataFim());
-        dto.setTipo(ata.getTipo() != null ? ata.getTipo().getTipoArp() : null);
-        dto.setObjeto(ata.getObjeto());
-        dto.setObservacao(ata.getObservacao());
-        dto.setSituacao(ata.getAtivo() != null ? ata.getAtivo().getSituacao() : null);
-        dto.setPortariaDesignacao(ata.getPortariaDesignacao());
-        dto.setDataDesignacao(ata.getDataDesignacao());
-
-        // relacionamentos
-        dto.setSecretarias(mapSecretarias(ata.getSecretarias()));
-        dto.setEquipe(extractEquipe(ata));
-
-        return dto;
-    }
-
-    // mapeia secretarias
-    private List<SecretariaResponseDTO> mapSecretarias(List<AtaSecretaria> secretarias) {
-        if (secretarias == null || secretarias.isEmpty()) {
-            return new ArrayList<>();
-        }
-        return secretarias.stream()
-                .map(this::toSecretariaResponseDTO)
-                .collect(Collectors.toList());
-    }
-
-    private SecretariaResponseDTO toSecretariaResponseDTO(AtaSecretaria as) {
-        SecretariaResponseDTO dto = new SecretariaResponseDTO();
-        dto.setId(as.getSecretaria().getId());
-        dto.setNome(as.getSecretaria().getNome());
-        dto.setSigla(as.getSecretaria().getSigla());
-        dto.setSituacao(as.getAtivo() != null ? as.getAtivo().getSituacao() : null);
-        return dto;
-    }
-
-    // extrai equipes do contrato
-    private List<EquipeContratoResponseDTO> extractEquipe(AtaRegistroPreco ata) {
-        if (ata.getEquipe() == null || ata.getEquipe().isEmpty()) {
-            return new ArrayList<>();
-        }
-        return ata.getEquipe().stream()
-                .map(this::toEquipeResponseDTO)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
-    }
-
-    private EquipeContratoResponseDTO toEquipeResponseDTO(EquipeContrato equipe) {
-        if (equipe == null) {
-            return null;
-        }
-
-        List<MembroEquipeResponseDTO> membrosDTO = new ArrayList<>();
-        if (equipe.getMembros() != null) {
-            membrosDTO = equipe.getMembros().stream()
-                    .map(this::toMembroResponseDTO)
-                    .collect(Collectors.toList());
-        }
-
-        EquipeContratoResponseDTO dto = new EquipeContratoResponseDTO();
-        dto.setId(equipe.getId());
-        dto.setAtaId(equipe.getAta() != null ? equipe.getAta().getId() : null);
-        dto.setAtaNumero(equipe.getAta() != null ? equipe.getAta().getNumero() : null);
-        dto.setAtaAno(equipe.getAta() != null ? equipe.getAta().getAno() : null);
-        dto.setAtaObjeto(equipe.getAta() != null ? equipe.getAta().getObjeto() : null);
-        dto.setAtivoId(equipe.getAtivo() != null ? equipe.getAtivo().getId() : null);
-        dto.setSituacao(equipe.getAtivo() != null ? equipe.getAtivo().getSituacao() : null);
-        dto.setMembros(membrosDTO);
-
-        return dto;
-    }
-
-    private MembroEquipeResponseDTO toMembroResponseDTO(EquipeMembro membro) {
-        if (membro == null) return null;
-
-        MembroEquipeResponseDTO dto = new MembroEquipeResponseDTO();
-        dto.setId(membro.getId());
-
-        if (membro.getServidor() != null) {
-            dto.setServidorId(membro.getServidor().getId());
-            dto.setServidorNome(membro.getServidor().getNome());
-            dto.setServidorCargo(membro.getServidor().getCargo());
-            if (membro.getServidor().getMatricula() != null) {
-                dto.setServidorMatricula(String.valueOf(membro.getServidor().getMatricula()));
-            }
-        }
-
-        if (membro.getFuncao() != null) {
-            dto.setFuncaoId(membro.getFuncao().getId());
-            dto.setFuncaoNome(membro.getFuncao().getNome()); // ou getDescricao()
-        }
-
-        return dto;
     }
 }

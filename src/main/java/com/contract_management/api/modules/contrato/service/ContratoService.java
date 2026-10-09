@@ -27,6 +27,7 @@ import com.contract_management.api.modules.contrato.repository.ContratoSecretari
 import com.contract_management.api.modules.contrato.repository.TipoRepository;
 import com.contract_management.api.modules.equipe.dto.request.MembroEquipeRequestDTO;
 import com.contract_management.api.modules.equipe.dto.response.EquipeContratoResponseDTO;
+import com.contract_management.api.modules.contrato.mapper.ContratoMapper;
 import com.contract_management.api.modules.equipe.dto.response.MembroEquipeResponseDTO;
 import com.contract_management.api.modules.equipe.model.EquipeContrato;
 import com.contract_management.api.modules.equipe.model.EquipeMembro;
@@ -52,6 +53,7 @@ public class ContratoService {
     private final EquipesVinculadas equipeContratoRepository;
     private final ServidorConsulta servidorRepository;
     private final FuncaoEquipeConsulta funcaoEquipeRepository;
+    private final ContratoMapper contratoMapper;
 
     @Transactional(readOnly = true)
     public List<ContratoResponseDTO> listarTodos() {
@@ -64,7 +66,7 @@ public class ContratoService {
             }
         }
         return contratos.stream()
-                .map(this::toResponseDTO)
+                .map(contratoMapper::toResponseDTO)
                 .collect(Collectors.toList());
     }
 
@@ -94,7 +96,7 @@ public class ContratoService {
                 contratoRepository.carregarMembrosEquipes(contratos);
             }
         }
-        return pagina.map(this::toResponseDTO);
+        return pagina.map(contratoMapper::toResponseDTO);
     }
 
     @Transactional(readOnly = true)
@@ -105,7 +107,7 @@ public class ContratoService {
         if (contrato.getEquipe() != null && !contrato.getEquipe().isEmpty()) {
             contratoRepository.carregarMembrosEquipePorContratoId(id);
         }
-        return toResponseDTO(contrato);
+        return contratoMapper.toResponseDTO(contrato);
     }
 
     @Transactional
@@ -141,7 +143,7 @@ public class ContratoService {
         salvarOuAtualizarEquipe(saved, dto.getMembros(), ativo);
 
         log.info("Contrato criado com sucesso. ID: {}, Número: {}/{}", saved.getId(), saved.getNumero(), saved.getAno());
-        return toResponseDTO(saved);
+        return contratoMapper.toResponseDTO(saved);
     }
 
     @Transactional
@@ -186,7 +188,7 @@ public class ContratoService {
 
         Contrato atualizado = contratoRepository.save(contrato);
         log.info("Contrato atualizado com sucesso. ID: {}, Número: {}/{}", atualizado.getId(), atualizado.getNumero(), atualizado.getAno());
-        return toResponseDTO(atualizado);
+        return contratoMapper.toResponseDTO(atualizado);
     }
 
     @Transactional
@@ -282,101 +284,5 @@ public class ContratoService {
         if (dto.getDataFim() != null && dto.getDataFim().isBefore(dto.getDataInicio())) {
             throw new BusinessException("Data fim não pode ser anterior à data início");
         }
-    }
-
-    private ContratoResponseDTO toResponseDTO(Contrato contrato) {
-        ContratoResponseDTO dto = new ContratoResponseDTO();
-        dto.setId(contrato.getId());
-        dto.setNumero(contrato.getNumero());
-        dto.setAno(contrato.getAno());
-        dto.setDataInicio(contrato.getDataInicio());
-        dto.setDataFim(contrato.getDataFim());
-        dto.setTipo(contrato.getTipo() != null ? contrato.getTipo().getTipoArp() : null);
-        dto.setObjeto(contrato.getObjeto());
-        dto.setNomeContratado(contrato.getNomeContratado());
-        dto.setPortariaDesignacao(contrato.getPortariaDesignacao());
-        dto.setDataDesignacao(contrato.getDataDesignacao());
-        dto.setSituacao(contrato.getAtivo() != null ? contrato.getAtivo().getSituacao() : null);
-        dto.setObservacao(contrato.getObservacao());
-        dto.setSecretarias(mapSecretarias(contrato.getSecretarias()));
-        dto.setEquipe(extractEquipe(contrato));
-        return dto;
-    }
-
-    private List<SecretariaResponseDTO> mapSecretarias(List<ContratoSecretaria> secretarias) {
-        if (secretarias == null || secretarias.isEmpty()) {
-            return new ArrayList<>();
-        }
-        return secretarias.stream()
-                .map(this::toSecretariaResponseDTO)
-                .collect(Collectors.toList());
-    }
-
-    private SecretariaResponseDTO toSecretariaResponseDTO(ContratoSecretaria cs) {
-        SecretariaResponseDTO dto = new SecretariaResponseDTO();
-        dto.setId(cs.getSecretaria().getId());
-        dto.setNome(cs.getSecretaria().getNome());
-        dto.setSigla(cs.getSecretaria().getSigla());
-        dto.setSituacao(cs.getAtivo() != null ? cs.getAtivo().getSituacao() : null);
-        return dto;
-    }
-
-    private List<EquipeContratoResponseDTO> extractEquipe(Contrato contrato) {
-        if (contrato.getEquipe() == null || contrato.getEquipe().isEmpty()) {
-            return new ArrayList<>();
-        }
-        return contrato.getEquipe().stream()
-                .map(this::toEquipeResponseDTO)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
-    }
-
-    private EquipeContratoResponseDTO toEquipeResponseDTO(EquipeContrato equipe) {
-        if (equipe == null) {
-            return null;
-        }
-
-        List<MembroEquipeResponseDTO> membrosDTO = new ArrayList<>();
-        if (equipe.getMembros() != null) {
-            membrosDTO = equipe.getMembros().stream()
-                    .map(this::toMembroResponseDTO)
-                    .collect(Collectors.toList());
-        }
-
-        EquipeContratoResponseDTO dto = new EquipeContratoResponseDTO();
-        dto.setId(equipe.getId());
-        dto.setContratoId(equipe.getContrato() != null ? equipe.getContrato().getId() : null);
-        dto.setContratoNumero(equipe.getContrato() != null ? equipe.getContrato().getNumero() : null);
-        dto.setContratoAno(equipe.getContrato() != null ? equipe.getContrato().getAno() : null);
-        dto.setContratoObjeto(equipe.getContrato() != null ? equipe.getContrato().getObjeto() : null);
-        dto.setAtivoId(equipe.getAtivo() != null ? equipe.getAtivo().getId() : null);
-        dto.setSituacao(equipe.getAtivo() != null ? equipe.getAtivo().getSituacao() : null);
-        dto.setMembros(membrosDTO);
-        return dto;
-    }
-
-    private MembroEquipeResponseDTO toMembroResponseDTO(EquipeMembro membro) {
-        if (membro == null) {
-            return null;
-        }
-
-        MembroEquipeResponseDTO dto = new MembroEquipeResponseDTO();
-        dto.setId(membro.getId());
-
-        if (membro.getServidor() != null) {
-            dto.setServidorId(membro.getServidor().getId());
-            dto.setServidorNome(membro.getServidor().getNome());
-            dto.setServidorCargo(membro.getServidor().getCargo());
-            if (membro.getServidor().getMatricula() != null) {
-                dto.setServidorMatricula(String.valueOf(membro.getServidor().getMatricula()));
-            }
-        }
-
-        if (membro.getFuncao() != null) {
-            dto.setFuncaoId(membro.getFuncao().getId());
-            dto.setFuncaoNome(membro.getFuncao().getNome());
-        }
-
-        return dto;
     }
 }

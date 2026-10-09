@@ -59,6 +59,9 @@ class AtaServiceTest {
     @Mock
     private FuncaoEquipeConsulta funcaoEquipeRepository;
 
+    @org.mockito.Spy
+    private com.contract_management.api.modules.contrato.mapper.AtaMapper ataMapper = org.mapstruct.factory.Mappers.getMapper(com.contract_management.api.modules.contrato.mapper.AtaMapper.class);
+
     @InjectMocks
     private AtaService ataService;
 

@@ -67,6 +67,9 @@ class ContratoServiceTest {
     @Mock
     private FuncaoEquipeRepository funcaoEquipeRepository;
 
+    @org.mockito.Spy
+    private com.contract_management.api.modules.contrato.mapper.ContratoMapper contratoMapper = org.mapstruct.factory.Mappers.getMapper(com.contract_management.api.modules.contrato.mapper.ContratoMapper.class);
+
     @InjectMocks
     private ContratoService contratoService;
 
