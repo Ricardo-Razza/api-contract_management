@@ -9,6 +9,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -121,5 +122,50 @@ class NotificacaoVencimentoSchedulerTest {
         verify(emailAlertaService, times(1)).enviarAlertaVencimento(anyString(), anyString(), anyInt(), anyInt(), anyLong());
         // Mas a notificação NÃO DEVE ser registrada como enviada no banco!
         verify(notificacaoRepository, never()).save(any(NotificacaoVencimentoEnviada.class));
+    }
+
+    @Test
+    void deveDeduplicarDestinatariosComMesmoEmailParaMesmoContrato() {
+        EquipeMembro membro1 = EquipeMembro.builder().id(1L).servidor(servidor).build();
+        EquipeContrato eq1 = EquipeContrato.builder().id(1L).contrato(contrato).membros(List.of(membro1)).build();
+
+        EquipeMembro membro2 = EquipeMembro.builder().id(2L).servidor(servidor).build();
+        EquipeContrato eq2 = EquipeContrato.builder().id(2L).contrato(contrato).membros(List.of(membro2)).build();
+
+        when(contratoRepository.findByDataFim(any(LocalDate.class)))
+                .thenReturn(List.of(contrato))
+                .thenReturn(Collections.emptyList())
+                .thenReturn(Collections.emptyList());
+
+        when(notificacaoRepository.findContratoIdsJaNotificados(anyList(), anyInt()))
+                .thenReturn(Collections.emptyList());
+
+        when(equipeContratoRepository.findByContratoIdInComMembros(anyList()))
+                .thenReturn(List.of(eq1, eq2));
+
+        scheduler.verificarContratosVencendo();
+
+        // Deve enviar apenas 1 e-mail para o servidor, mesmo estando em 2 equipes do mesmo contrato
+        verify(emailAlertaService, times(1)).enviarAlertaVencimento(eq("joao@exemplo.com"), anyString(), anyInt(), anyInt(), anyLong());
+        verify(notificacaoRepository, times(1)).save(any(NotificacaoVencimentoEnviada.class));
+    }
+
+    @Test
+    void deveTratarViolacaoDeIntegridadeComoJaEnviadoEmConcorrencia() {
+        when(contratoRepository.findByDataFim(any(LocalDate.class)))
+                .thenReturn(List.of(contrato))
+                .thenReturn(Collections.emptyList())
+                .thenReturn(Collections.emptyList());
+
+        when(notificacaoRepository.findContratoIdsJaNotificados(anyList(), anyInt()))
+                .thenReturn(Collections.emptyList());
+
+        when(equipeContratoRepository.findByContratoIdInComMembros(anyList()))
+                .thenReturn(List.of(equipe));
+
+        doThrow(new org.springframework.dao.DataIntegrityViolationException("Duplicate entry"))
+                .when(notificacaoRepository).save(any(NotificacaoVencimentoEnviada.class));
+
+        assertDoesNotThrow(() -> scheduler.verificarContratosVencendo());
     }
 }

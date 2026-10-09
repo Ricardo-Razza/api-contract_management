@@ -93,8 +93,9 @@ public class NotificacaoVencimentoScheduler {
             return false;
         }
 
-        boolean algumEnviado = false;
+        Map<String, Servidor> servidoresPorEmail = new java.util.LinkedHashMap<>();
         for (EquipeContrato equipe : equipes) {
+            if (equipe.getMembros() == null) continue;
             for (EquipeMembro membro : equipe.getMembros()) {
                 Servidor servidor = membro.getServidor();
                 if (servidor == null) continue;
@@ -103,37 +104,47 @@ public class NotificacaoVencimentoScheduler {
                             servidor.getNome(), servidor.getId(), contrato.getNumero(), contrato.getAno());
                     continue;
                 }
-                try {
-                    emailAlertaService.enviarAlertaVencimento(
-                            servidor.getEmail(),
-                            servidor.getNome(),
-                            contrato.getNumero(),
-                            contrato.getAno(),
-                            diasRestantes
-                    );
-                    algumEnviado = true;
-                    log.info("Alerta de {} dias enviado para {} (contrato {}/{})",
-                            diasRestantes, servidor.getEmail(),
-                            contrato.getNumero(), contrato.getAno());
-                } catch (Exception e) {
-                    log.error("Falha ao enviar e-mail para {} (servidor id={}, contrato {}/{}): {}",
-                            servidor.getEmail(), servidor.getId(),
-                            contrato.getNumero(), contrato.getAno(), e.getMessage());
-                }
+                servidoresPorEmail.putIfAbsent(servidor.getEmail().trim().toLowerCase(), servidor);
+            }
+        }
+
+        boolean algumEnviado = false;
+        for (Servidor servidor : servidoresPorEmail.values()) {
+            try {
+                emailAlertaService.enviarAlertaVencimento(
+                        servidor.getEmail(),
+                        servidor.getNome(),
+                        contrato.getNumero(),
+                        contrato.getAno(),
+                        diasRestantes
+                );
+                algumEnviado = true;
+                log.info("Alerta de {} dias enviado para {} (contrato {}/{})",
+                        diasRestantes, servidor.getEmail(),
+                        contrato.getNumero(), contrato.getAno());
+            } catch (Exception e) {
+                log.error("Falha ao enviar e-mail para {} (servidor id={}, contrato {}/{}): {}",
+                        servidor.getEmail(), servidor.getId(),
+                        contrato.getNumero(), contrato.getAno(), e.getMessage());
             }
         }
         return algumEnviado;
     }
 
     private void registrarNotificacaoContrato(Contrato contrato, int diasAlerta) {
-        NotificacaoVencimentoEnviada registro = NotificacaoVencimentoEnviada.builder()
-                .contrato(contrato)
-                .diasAlerta(diasAlerta)
-                .dataFimReferencia(contrato.getDataFim())
-                .enviadoEm(LocalDateTime.now())
-                .build();
+        try {
+            NotificacaoVencimentoEnviada registro = NotificacaoVencimentoEnviada.builder()
+                    .contrato(contrato)
+                    .diasAlerta(diasAlerta)
+                    .dataFimReferencia(contrato.getDataFim())
+                    .enviadoEm(LocalDateTime.now())
+                    .build();
 
-        notificacaoRepository.save(registro);
+            notificacaoRepository.save(registro);
+        } catch (org.springframework.dao.DataIntegrityViolationException ex) {
+            log.info("Notificação do contrato {}/{} para {} dias já havia sido registrada (concorrência): {}",
+                    contrato.getNumero(), contrato.getAno(), diasAlerta, ex.getMessage());
+        }
     }
 
     // ===================== ATAS DE REGISTRO DE PREÇO =====================
@@ -193,8 +204,9 @@ public class NotificacaoVencimentoScheduler {
             return false;
         }
 
-        boolean algumEnviado = false;
+        Map<String, Servidor> servidoresPorEmail = new java.util.LinkedHashMap<>();
         for (EquipeContrato equipe : equipes) {
+            if (equipe.getMembros() == null) continue;
             for (EquipeMembro membro : equipe.getMembros()) {
                 Servidor servidor = membro.getServidor();
                 if (servidor == null) continue;
@@ -203,36 +215,46 @@ public class NotificacaoVencimentoScheduler {
                             servidor.getNome(), servidor.getId(), ata.getNumero(), ata.getAno());
                     continue;
                 }
-                try {
-                    emailAlertaService.enviarAlertaVencimentoAta(
-                            servidor.getEmail(),
-                            servidor.getNome(),
-                            ata.getNumero(),
-                            ata.getAno(),
-                            diasRestantes
-                    );
-                    algumEnviado = true;
-                    log.info("Alerta de {} dias enviado para {} (ata {}/{})",
-                            diasRestantes, servidor.getEmail(),
-                            ata.getNumero(), ata.getAno());
-                } catch (Exception e) {
-                    log.error("Falha ao enviar e-mail para {} (servidor id={}, ata {}/{}): {}",
-                            servidor.getEmail(), servidor.getId(),
-                            ata.getNumero(), ata.getAno(), e.getMessage());
-                }
+                servidoresPorEmail.putIfAbsent(servidor.getEmail().trim().toLowerCase(), servidor);
+            }
+        }
+
+        boolean algumEnviado = false;
+        for (Servidor servidor : servidoresPorEmail.values()) {
+            try {
+                emailAlertaService.enviarAlertaVencimentoAta(
+                        servidor.getEmail(),
+                        servidor.getNome(),
+                        ata.getNumero(),
+                        ata.getAno(),
+                        diasRestantes
+                );
+                algumEnviado = true;
+                log.info("Alerta de {} dias enviado para {} (ata {}/{})",
+                        diasRestantes, servidor.getEmail(),
+                        ata.getNumero(), ata.getAno());
+            } catch (Exception e) {
+                log.error("Falha ao enviar e-mail para {} (servidor id={}, ata {}/{}): {}",
+                        servidor.getEmail(), servidor.getId(),
+                        ata.getNumero(), ata.getAno(), e.getMessage());
             }
         }
         return algumEnviado;
     }
 
     private void registrarNotificacaoAta(AtaRegistroPreco ata, int diasAlerta) {
-        NotificacaoVencimentoEnviada registro = NotificacaoVencimentoEnviada.builder()
-                .ata(ata)
-                .diasAlerta(diasAlerta)
-                .dataFimReferencia(ata.getDataFim())
-                .enviadoEm(LocalDateTime.now())
-                .build();
+        try {
+            NotificacaoVencimentoEnviada registro = NotificacaoVencimentoEnviada.builder()
+                    .ata(ata)
+                    .diasAlerta(diasAlerta)
+                    .dataFimReferencia(ata.getDataFim())
+                    .enviadoEm(LocalDateTime.now())
+                    .build();
 
-        notificacaoRepository.save(registro);
+            notificacaoRepository.save(registro);
+        } catch (org.springframework.dao.DataIntegrityViolationException ex) {
+            log.info("Notificação da ata {}/{} para {} dias já havia sido registrada (concorrência): {}",
+                    ata.getNumero(), ata.getAno(), diasAlerta, ex.getMessage());
+        }
     }
 }
