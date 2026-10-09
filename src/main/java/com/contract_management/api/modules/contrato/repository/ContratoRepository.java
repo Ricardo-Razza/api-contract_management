@@ -11,6 +11,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
+import com.contract_management.api.modules.ativo.model.Ativo;
 import com.contract_management.api.modules.contrato.model.Contrato;
 import com.contract_management.api.modules.equipe.model.EquipeContrato;
 
@@ -36,9 +37,13 @@ public interface ContratoRepository extends JpaRepository<Contrato, Long>, Contr
     @Query("""
         SELECT c FROM Contrato c
         WHERE c.dataFim = :data
-          AND c.ativo.situacao = 'ATIVO'
+          AND c.ativo.situacao = :situacao
         """)
-    List<Contrato> findByDataFim(@Param("data") LocalDate data);
+    List<Contrato> findByDataFimAndAtivoSituacao(@Param("data") LocalDate data, @Param("situacao") String situacao);
+
+    default List<Contrato> findByDataFim(LocalDate data) {
+        return findByDataFimAndAtivoSituacao(data, Ativo.SITUACAO_ATIVO);
+    }
 
     /**
      * Carrega todos os contratos com tipo, ativo e secretarias vinculadas em uma única query com JOIN FETCH.

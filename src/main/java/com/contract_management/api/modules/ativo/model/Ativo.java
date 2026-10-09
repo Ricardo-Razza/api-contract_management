@@ -16,6 +16,9 @@ import lombok.Setter;
 @Builder
 public class Ativo {
 
+    public static final String SITUACAO_ATIVO = "ATIVO";
+    public static final String SITUACAO_DESATIVADO = "DESATIVADO";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
